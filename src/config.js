@@ -34,7 +34,9 @@ function readConfigFile() {
   const file = path.join(appDir(), 'config.json');
   if (!fs.existsSync(file)) return {};
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
+    // The BOM strip matters: a Windows text editor or PowerShell's `-Encoding utf8` writes UTF-8
+    // with a BOM, which JSON.parse rejects - so the file would be silently ignored.
+    return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, ''));
   } catch (err) {
     console.warn(`[config] Ignoring config.json - it is not valid JSON: ${err.message}`);
     return {};

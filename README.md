@@ -110,7 +110,12 @@ works without MSVC as long as you haven't changed the C++.
 
 **`npm run dist` needs about 1 GB of free disk space.** It stages a ~270 MB unpacked build
 and then has NSIS compress it, and when it runs out it fails with
-`Error: can't write 67108864 bytes to output` — which looks like a config error but is not.
+`Error: can't write 67108864 bytes to output` — which looks like a config error but is not,
+and it leaves a broken ~45 KB stub behind that will not run.
+
+**No app icon yet**, so the build logs `default Electron icon is used` and the exe carries
+Electron's. Drop a 256×256 `build/icon.ico` in and electron-builder will pick it up with no
+config change.
 
 To run it without packaging:
 
@@ -173,9 +178,15 @@ plain Node: no window, no `app`, and an immediate silent exit, while
 them) export it, so a terminal inherited from one will make the app look broken when it is
 fine. `npm start` from a normal terminal is unaffected.
 
-**Settings location differs between dev and packaged.** Electron derives `userData` from the
-app name, which is `bw-ladder-review-overlay` running from source and
-`BW Ladder Review Overlay` in the packaged build, so the two do not share settings.
+**Settings live in one place for both dev and packaged runs:**
+`%APPDATA%\bw-ladder-review-overlay\`. Electron takes that from the package `name`, and
+electron-builder's `productName` does not change it — so `npm start` and the packaged exe
+share the same settings and match history, which is convenient but does mean a dev run can
+leave state the packaged build then picks up.
+
+**Only one copy can run at a time.** They all want the same port, so a forgotten `npm start`
+will make the packaged exe report `Port 3712 is already in use` instead of serving. It says
+so in its Activity log rather than failing silently.
 
 ## Licences
 

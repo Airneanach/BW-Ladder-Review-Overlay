@@ -102,8 +102,21 @@
   async function showValidity(kind, value, target) {
     const res = await window.review.validatePath(kind, value);
     target.textContent = res.message;
-    target.classList.toggle('is-good', res.ok);
-    target.classList.toggle('is-bad', !res.ok);
+    target.classList.toggle('is-good', res.level === 'good');
+    target.classList.toggle('is-wait', res.level === 'wait');
+    target.classList.toggle('is-bad', res.level === 'bad');
+  }
+
+  /**
+   * Both paths are re-checked on a timer, because the interesting case changes underneath us:
+   * LastReplay.rep does not exist until the first game ends, and a one-shot check at startup
+   * would leave "not there yet" on screen for the rest of the session.
+   */
+  function watchValidity() {
+    setInterval(() => {
+      void showValidity('install', settings.installPath, installValidity);
+      void showValidity('replay', settings.lastReplayPath, replayValidity);
+    }, 5000);
   }
 
   // Saved on blur rather than on every keystroke: typing a path a character at a time would
@@ -255,8 +268,12 @@
 
     li.append(time, message);
     logList.append(li);
-    // Newest at the bottom, so keep it in view.
-    logList.scrollTop = logList.scrollHeight;
+    // Newest at the bottom, so keep it in view - but only when the log itself is actually
+    // scrollable. Assigning scrollTop to a container that cannot scroll is not always the no-op
+    // it looks like, and this ran on every line including the ones replayed during startup.
+    if (logList.scrollHeight > logList.clientHeight) {
+      logList.scrollTop = logList.scrollHeight;
+    }
   }
 
   // --- boot ----------------------------------------------------------------
@@ -283,10 +300,17 @@
 
     await showValidity('install', settings.installPath, installValidity);
     await showValidity('replay', settings.lastReplayPath, replayValidity);
+    watchValidity();
 
     // Belt and braces with overflow-anchor in the stylesheet: whatever the layout does while
-    // being filled in, the window ends up showing the top of the page. After a frame, so it runs
-    // once the rows and log lines added above have actually been laid out.
+    // being filled in, the window opens showing the top of the page - the masthead and the OBS
+    // URL, which are the two things a first-time user needs.
+    //
+    // Twice: once after layout settles, and once more shortly after, because the startup log
+    // lines (including a port-in-use error) arrive as live events just after boot finishes and
+    // used to leave the window scrolled past the top. Deliberately only during startup - yanking
+    // the view to the top when a game gets reviewed half an hour in would be worse.
     requestAnimationFrame(() => window.scrollTo(0, 0));
+    setTimeout(() => window.scrollTo(0, 0), 400);
   })();
 })();

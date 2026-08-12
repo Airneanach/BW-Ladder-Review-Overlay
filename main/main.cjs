@@ -63,12 +63,21 @@ function defaultSettings() {
 }
 
 function loadSettings() {
+  const file = settingsPath();
+  if (!fs.existsSync(file)) return defaultSettings();
   try {
-    const saved = JSON.parse(fs.readFileSync(settingsPath(), 'utf8'));
+    // The BOM strip matters: anything that writes this file with a Windows text editor or
+    // PowerShell's `-Encoding utf8` produces UTF-8 with a BOM, which JSON.parse rejects. Without
+    // this, hand-editing the file silently reverted every setting to its default.
+    const text = fs.readFileSync(file, 'utf8').replace(/^﻿/, '');
+    const saved = JSON.parse(text);
     // Merged over the defaults so a settings file from an older version, or one missing a key,
     // still yields a usable config rather than undefined paths.
     return { ...defaultSettings(), ...saved };
-  } catch {
+  } catch (err) {
+    // Said out loud rather than swallowed: silently falling back to defaults looks to the user
+    // like the app forgot their settings for no reason.
+    log(`Could not read settings (${err.message}) - using defaults. Fix or delete ${file}`, 'bad');
     return defaultSettings();
   }
 }
@@ -313,18 +322,34 @@ ipcMain.handle('overlay:open', () =>
   shell.openExternal(`http://127.0.0.1:${(server && server.port) || loadSettings().port}/`)
 );
 
+/**
+ * Levels are 'good' / 'wait' / 'bad' rather than a boolean, because a missing LastReplay.rep is
+ * the normal state of a correctly configured machine that has not played a game yet. Reporting
+ * that in red as "path does not exist" made a working setup look broken, which is the single
+ * most expensive kind of wrong message this app can show.
+ */
 ipcMain.handle('path:validate', (_event, { kind, value }) => {
-  if (!value) return { ok: false, message: 'Not set.' };
-  if (!fs.existsSync(value)) return { ok: false, message: 'That path does not exist.' };
+  if (!value) return { level: 'bad', message: 'Not set.' };
+
   if (kind === 'install') {
+    if (!fs.existsSync(value)) return { level: 'bad', message: 'That folder does not exist.' };
     if (!fs.existsSync(path.join(value, 'Data'))) {
-      return { ok: false, message: 'No Data folder inside - this may not be the StarCraft folder.' };
+      return { level: 'bad', message: 'No Data folder inside - this may not be the StarCraft folder.' };
     }
-    return { ok: true, message: 'Looks like a StarCraft install.' };
+    return { level: 'good', message: 'Looks like a StarCraft install.' };
   }
+
   if (kind === 'replay') {
-    if (!value.toLowerCase().endsWith('.rep')) return { ok: false, message: 'Not a .rep file.' };
-    return { ok: true, message: 'Found it.' };
+    if (!value.toLowerCase().endsWith('.rep')) return { level: 'bad', message: 'Not a .rep file.' };
+    if (!fs.existsSync(value)) {
+      const parent = path.dirname(value);
+      if (!fs.existsSync(parent)) {
+        return { level: 'bad', message: `That folder does not exist: ${parent}` };
+      }
+      return { level: 'wait', message: 'Not there yet - StarCraft writes it when you finish a game.' };
+    }
+    return { level: 'good', message: 'Found it.' };
   }
-  return { ok: true, message: '' };
+
+  return { level: 'good', message: '' };
 });

@@ -356,6 +356,9 @@ input:focus-visible {
 
 .validity.is-good { color: var(--good); }
 .validity.is-good::before { background: var(--good); }
+/* Not an error: a replay file that does not exist yet is the normal state before the first game. */
+.validity.is-wait { color: var(--ink-soft); }
+.validity.is-wait::before { background: var(--ink-faint); }
 .validity.is-bad { color: var(--bad); }
 .validity.is-bad::before { background: var(--bad); }
 
