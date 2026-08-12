@@ -24,6 +24,42 @@ import { computeMatchStats } from './computeMatchStats.js';
 const isSea = () => sea.isSea();
 
 /**
+ * Blocks until the user presses a key, but only when this is a console the app owns.
+ *
+ * The reason this exists: double-clicked from Explorer, the console window dies with the
+ * process, so an error printed on the way out is on screen for a few milliseconds. From
+ * the user's side that is indistinguishable from "the exe does nothing" - which is exactly
+ * how the first build was reported. Pausing makes every failure readable.
+ *
+ * `stdin.isTTY` is the discriminator: true when launched from Explorer or a terminal, false
+ * when output is piped or redirected (scripts, --once runs, CI), where blocking for input
+ * would hang instead of help.
+ */
+function waitForKeyIfInteractive() {
+  if (!process.stdin.isTTY) return;
+  console.log('\nPress Enter to close this window...');
+  const buf = Buffer.alloc(1);
+  // readSync can throw EAGAIN on a console that is not ready yet; retry rather than fall
+  // through, or the pause silently does nothing and we are back to a vanishing window.
+  for (;;) {
+    try {
+      fs.readSync(0, buf, 0, 1, null);
+      return;
+    } catch (err) {
+      if (err.code === 'EAGAIN') continue;
+      return; // EOF, or a console that cannot be read - nothing useful left to do
+    }
+  }
+}
+
+/** Prints a fatal error, keeps the window open long enough to read it, and exits. */
+function fatal(message) {
+  console.error(`\n[fatal] ${message}`);
+  waitForKeyIfInteractive();
+  process.exit(1);
+}
+
+/**
  * The overlay page. Embedded in the SEA build; read off disk when running from source so
  * editing the page does not mean rebuilding the exe.
  */
@@ -79,8 +115,7 @@ function main() {
   try {
     bwstatsPath = resolveBwstatsPath();
   } catch (err) {
-    console.error(`[fatal] ${err.message}`);
-    process.exit(1);
+    fatal(err.message);
   }
 
   // Reported on /health so the overlay - or a person looking at the console - can tell
@@ -187,14 +222,18 @@ function main() {
 
   server.on('error', err => {
     if (err.code === 'EADDRINUSE') {
-      console.error(
-        `[fatal] Port ${config.port} is already in use - another copy of this app is ` +
-        `probably running. Close it, or start this one with --port <number>.`
+      fatal(
+        `Port ${config.port} is already in use.\n\n` +
+        `         Almost always this means BW Ladder Review Overlay is already running -\n` +
+        `         check your taskbar for another window like this one. Only one copy can\n` +
+        `         serve the overlay at a time.\n\n` +
+        `         If you actually want two, start this one on another port:\n` +
+        `             BWLadderReview.exe --port ${config.port + 1}\n` +
+        `         and point the OBS browser source at that port instead.`
       );
     } else {
-      console.error(`[fatal] Server error: ${err.message}`);
+      fatal(`Server error: ${err.message}`);
     }
-    process.exit(1);
   });
 
   // 127.0.0.1 explicitly, not 0.0.0.0: nothing here should be reachable from the network.
@@ -230,4 +269,17 @@ function main() {
   }
 }
 
-main();
+// Any crash that escapes the handlers above would otherwise close the console instantly,
+// leaving the user with a window that flashed and vanished and no way to report why.
+process.on('uncaughtException', err => {
+  fatal(`Unexpected error: ${err?.stack || err?.message || err}`);
+});
+process.on('unhandledRejection', err => {
+  fatal(`Unexpected error: ${err?.stack || err?.message || err}`);
+});
+
+try {
+  main();
+} catch (err) {
+  fatal(`Could not start: ${err?.stack || err?.message || err}`);
+}

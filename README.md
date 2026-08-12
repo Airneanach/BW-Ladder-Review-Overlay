@@ -44,6 +44,22 @@ the right one into `config.json`:
          players in this replay: L9_XD, nOmZergWeedLord
 ```
 
+## Troubleshooting
+
+**The window flashes and closes.** It hit an error on startup and is telling you what —
+the window now stays open on any failure and waits for Enter, so read the message. The
+usual cause is that a copy is *already running*: only one can serve the overlay at a time,
+so check your taskbar before starting another. To run a second deliberately, use
+`--port 3713` and point OBS at that port.
+
+**The overlay is blank in OBS.** Expected until a game finishes — the card only appears
+when a *new* result arrives, and a fresh copy has no history to show. Check
+`http://127.0.0.1:3712/health` in a browser to confirm the app is up and configured; it
+lists any warnings. To see a card without playing, review a past replay first:
+`BWLadderReview.exe --once "path\to\some.rep"`, then start it normally.
+
+**No win/loss or grade on the card.** Your in-game name isn't set — see above.
+
 ## What the grades mean
 
 The **inputs** are objective — real harvested totals, real worker/base counts, real army
