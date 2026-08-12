@@ -9,56 +9,44 @@ harvested totals, worker and base counts, army value, supply-blocked time — gr
 serves the result as a browser overlay for OBS. A typical 15-minute game is reviewed in
 about a second.
 
-It ships as **one file**: `BWLadderReview.exe`. No Node, no install step.
+It is a desktop app: a window where you check your StarCraft folder, your replay file and
+your in-game name(s), copy the overlay URL into OBS, and then leave it running while you
+play.
 
-## For casters — using it
+## Using it
 
-1. Download **[`dist/BWLadderReview.exe`](dist/BWLadderReview.exe)** and put it in a folder
-   of its own (it writes its match history beside itself).
-2. Make a `config.json` next to it with your in-game name — see
-   [config.example.json](config.example.json):
-   ```json
-   { "playerNames": ["YourInGameName"] }
-   ```
-3. Double-click the exe. It prints the overlay URL, `http://127.0.0.1:3712/`.
-4. In OBS: **+ → Browser**, paste that URL, set the size to **1920 x 1080**.
-5. Play. Each finished game pops its report card up for 15 seconds.
+1. Start **BW Ladder Review Overlay**.
+2. Add your in-game name(s) — one per account you play on. This is the only thing you have
+   to fill in; the StarCraft folder and replay file are detected for you, with a green tick
+   when they check out.
+3. Copy the overlay URL and add it in OBS as a **Browser** source, **1920 × 1080**.
+4. Play. Each finished game pops its report card up for 15 seconds.
 
-Leave the window open while you play; closing it stops the overlay. Start it before or
-after StarCraft — it just watches for the replay file to change.
+Leave the window open while you play — closing it stops the overlay.
 
-The exe is **unsigned**, so SmartScreen will warn on first run: **More info → Run anyway**.
+The overlay is blank until a game finishes, which is normal. **Review a past replay…** puts
+a card on screen straight away so you can position it in OBS before you play.
 
-### Why the name is the one thing you have to configure
+### Why the name is the one thing you have to enter
 
-The replay records in-game account names, and nothing on the machine reliably says which
-of them is you — Remastered has no screen-name registry key, and picking the host or slot 0
-is wrong as often as it's right. So it has to be told.
+Replays record the in-game account names that played, but nothing on your PC says which of
+them is you — Remastered has no screen-name registry key, and picking the host or slot 0 is
+wrong as often as it's right.
 
-If you skip it, the app still works and still records the game — it just can't say whether
-*you* won or grade *your* play. It prints the names it found in the replay so you can paste
-the right one into `config.json`:
+If you leave it empty the app still works and still records the game; it just can't say
+whether *you* won or grade *your* play. It tells you the names it found in the replay so you
+can add the right one:
 
 ```
-[review] Reviewed in 1.0s, but none of the configured player names matched this game.
-         players in this replay: L9_XD, nOmZergWeedLord
+Reviewed in 1.0s, but none of your in-game names matched this game.
+Players in this replay: L9_XD, nOmZergWeedLord
 ```
 
-## Troubleshooting
+### Where it keeps things
 
-**The window flashes and closes.** It hit an error on startup and is telling you what —
-the window now stays open on any failure and waits for Enter, so read the message. The
-usual cause is that a copy is *already running*: only one can serve the overlay at a time,
-so check your taskbar before starting another. To run a second deliberately, use
-`--port 3713` and point OBS at that port.
-
-**The overlay is blank in OBS.** Expected until a game finishes — the card only appears
-when a *new* result arrives, and a fresh copy has no history to show. Check
-`http://127.0.0.1:3712/health` in a browser to confirm the app is up and configured; it
-lists any warnings. To see a card without playing, review a past replay first:
-`BWLadderReview.exe --once "path\to\some.rep"`, then start it normally.
-
-**No win/loss or grade on the card.** Your in-game name isn't set — see above.
+Settings, match history and a crash log live in
+`%APPDATA%\bw-ladder-review-overlay\`. Nothing is written next to the exe, because the
+portable build unpacks itself to a new temporary folder on every run.
 
 ## What the grades mean
 
@@ -93,6 +81,8 @@ Append to the browser-source URL:
 
 ## Endpoints
 
+The app serves these on `127.0.0.1` only — nothing is reachable from the network.
+
 | Path | Serves |
 | --- | --- |
 | `/` | the overlay page |
@@ -104,59 +94,56 @@ Append to the browser-source URL:
 `key_moment_text`, `grades_json` (the report card, as a JSON string) and `all_players`.
 Point your own graphics at it if you don't want the bundled page.
 
-## Command line
-
-```
-BWLadderReview.exe                          start watching
-BWLadderReview.exe --name "YourName"        set the player name without a config.json
-BWLadderReview.exe --once "path\to.rep"     review one replay, print the JSON, exit
-BWLadderReview.exe --port 3798              serve on another port
-BWLadderReview.exe --replay "path\LastReplay.rep"   watch a different file
-BWLadderReview.exe --install "D:\StarCraft"         point at another install
-```
-
 ## Building
 
-Two stages: the native simulator, then the exe that embeds it.
+Two stages: the native simulator, then the app.
 
 ```
 native\build-stats.bat     # -> native\bwstats.exe   (needs MSVC; only when the C++ changes)
 npm install
-npm run build:exe          # -> dist\BWLadderReview.exe
+npm run dist               # -> dist\BWLadderReview.exe   (portable, single file, ~75 MB)
 ```
 
 `build-stats.bat` needs Visual Studio Build Tools with "Desktop development with C++" and
-finds the x64 developer environment itself. `bwstats.exe` is committed, so `npm run
-build:exe` works without MSVC as long as you haven't changed the C++.
+finds the x64 developer environment itself. `bwstats.exe` is committed, so `npm run dist`
+works without MSVC as long as you haven't changed the C++.
 
-To run from source without packaging:
+**`npm run dist` needs about 1 GB of free disk space.** It stages a ~270 MB unpacked build
+and then has NSIS compress it, and when it runs out it fails with
+`Error: can't write 67108864 bytes to output` — which looks like a config error but is not.
+
+To run it without packaging:
 
 ```
-npm start
-npm run review -- "path\to\replay.rep"
+npm start                             the app, from source
+npm run review -- "path\to\game.rep"  review one replay on the command line, print JSON
+npm run serve                         watch and serve with no window (console only)
 ```
-
-**The exe is ~89 MB** because Node's runtime is inside it — that is the cost of a single
-file with no install step. See [`build/build-exe.mjs`](build/build-exe.mjs) for the four
-steps (bundle → SEA blob → copy node.exe → inject).
 
 ## Layout
 
 ```
-src/main.js                 HTTP server, watcher wiring, console output
-src/config.js               autodetects StarCraft, the replay path; reads config.json
-src/watchLastReplay.js      fires once per finished game, dependency-free
+main/main.cjs               Electron main: window, settings, drives the review server
+main/preload.cjs            the renderer's only route out (contextIsolation)
+renderer/                   the settings window
+src/reviewServer.js         watch → simulate → grade → serve, with no opinion about the UI
+src/main.js                 console entry point, same engine without a window
+src/config.js               config.json + argv, for the console entry only
+src/detect.js               finds StarCraft and the replay file
+src/watchLastReplay.js      fires once per finished game
 src/matchStore.js           history + the row shape the overlay reads
-src/computeMatchStats.js    orchestrates the whole pipeline for one replay
+src/computeMatchStats.js    runs the pipeline for one replay
 src/replayContainer.js      decodes SC:R's replay container format
 src/commandStream.js        leave-game events, chat, APM from the command stream
 src/gradeMatch.js           the report card - anchor tables live here
 native/src/main.cpp         drives OpenBW frame by frame, prints CSV state
 native/vendor/openbw/       vendored OpenBW (patched - see its NOTICE.md)
 native/vendor/casclib/      vendored CascLib (MIT)
-web/                        the overlay page, embedded into the exe at build time
-build/build-exe.mjs         packages everything into the single exe
+web/                        the overlay page
 ```
+
+The GUI and the console entry both drive `src/reviewServer.js`, so there is one
+implementation of the pipeline rather than two that can drift.
 
 ## How it works
 
@@ -167,11 +154,8 @@ LastReplay.rep changes
      your StarCraft install's CASC storage, printing per-second state as CSV
   -> computeMatchStats.js parses it, reconstructs the winner, computes economy stats
   -> gradeMatch.js turns the samples into a report card
-  -> served on 127.0.0.1:3712 for the overlay page to pick up
+  -> served on 127.0.0.1 for the overlay page to pick up
 ```
-
-Nothing is sent anywhere: the server binds `127.0.0.1` only. The simulator reads your
-StarCraft installation's data files; the app never writes to the game.
 
 Replays record only *commands*, never state — which is why knowing how many minerals you
 had banked at 8:00 requires re-running the game rather than reading a field. Getting OpenBW
@@ -180,6 +164,18 @@ undocumented compatibility gaps, and win/loss has to be reconstructed from four 
 signals because replays have no winner field. Both are written up in
 [`native/vendor/openbw/NOTICE.md`](native/vendor/openbw/NOTICE.md) and the comments in
 `computeMatchStats.js`.
+
+## Notes for anyone hacking on it
+
+**`ELECTRON_RUN_AS_NODE`.** If that variable is set in your shell, `electron.exe` runs as
+plain Node: no window, no `app`, and an immediate silent exit, while
+`electron --version` prints a *Node* version. Some editors (VS Code's extension host among
+them) export it, so a terminal inherited from one will make the app look broken when it is
+fine. `npm start` from a normal terminal is unaffected.
+
+**Settings location differs between dev and packaged.** Electron derives `userData` from the
+app name, which is `bw-ladder-review-overlay` running from source and
+`BW Ladder Review Overlay` in the packaged build, so the two do not share settings.
 
 ## Licences
 

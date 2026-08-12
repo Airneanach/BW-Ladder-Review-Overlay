@@ -1,14 +1,18 @@
 node_modules/
 
-# Build intermediates. dist/BWLadderReview.exe is committed on purpose.
-build/bundle.cjs
-build/sea-config.json
-build/sea-prep.blob
+# electron-builder output. dist/BWLadderReview.exe is committed on purpose; everything else
+# in there is intermediate.
+dist/win-unpacked/
+dist/builder-debug.yml
+dist/*.blockmap
+dist/*.yml
+
+# Native build intermediates
 native/build/
 *.obj
 *.pdb
 *.ilk
 
-# Written at runtime beside the exe
+# Written at runtime
 match-history.json
 config.json

@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'" />
+    <title>BW Ladder Review Overlay</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="masthead">
+        <div class="masthead-mark" aria-hidden="true"></div>
+        <div class="masthead-text">
+          <h1>BW Ladder Review Overlay</h1>
+          <p class="masthead-sub">Grades your ladder games as you finish them.</p>
+        </div>
+        <div class="status-pill" id="status-pill">
+          <span class="status-dot" id="status-dot"></span>
+          <span id="status-text">Starting…</span>
+        </div>
+      </header>
+
+      <!-- The OBS source ------------------------------------------------------ -->
+      <section class="card">
+        <h2 class="card-title">Put it in OBS</h2>
+        <p class="card-note">
+          Add a <strong>Browser</strong> source in OBS, paste this URL, and set the size to
+          <strong>1920 &times; 1080</strong>.
+        </p>
+        <div class="url-row">
+          <input type="text" id="overlay-url" readonly spellcheck="false" />
+          <button type="button" id="copy-url" class="button">Copy</button>
+          <button type="button" id="open-url" class="button button-quiet">Preview</button>
+        </div>
+        <p class="field-hint">
+          The overlay is blank until a game finishes — that is normal. Use
+          <em>Review a past replay</em> below to put a card on screen right now.
+        </p>
+      </section>
+
+      <!-- Settings ------------------------------------------------------------ -->
+      <section class="card">
+        <h2 class="card-title">Your details</h2>
+
+        <div class="field">
+          <span class="field-label">
+            Your in-game name(s)
+            <span class="field-label-note">add every account you play on</span>
+          </span>
+          <p class="field-hint">
+            This is the one thing that cannot be detected automatically. A replay records the
+            account names that played, but nothing on your PC says which of them is you — so
+            without this, a game still gets recorded, just with no win/loss and no grade.
+          </p>
+          <ul class="name-list" id="name-list"></ul>
+          <div class="add-row">
+            <input
+              type="text"
+              id="new-name"
+              placeholder="Exactly as it appears in game"
+              spellcheck="false"
+              autocomplete="off"
+            />
+            <button type="button" id="add-name" class="button">Add name</button>
+          </div>
+          <p class="field-error" id="name-error" hidden></p>
+        </div>
+
+        <div class="field">
+          <span class="field-label">StarCraft folder</span>
+          <p class="field-hint">
+            Where StarCraft is installed. The replay is re-simulated using the real game data
+            from here, so it has to be the folder containing <code>Data</code>.
+          </p>
+          <div class="path-row">
+            <input type="text" id="install-path" spellcheck="false" autocomplete="off" />
+            <button type="button" id="browse-install" class="button button-quiet">Browse…</button>
+          </div>
+          <p class="validity" id="install-validity"></p>
+        </div>
+
+        <div class="field">
+          <span class="field-label">
+            Replay file
+            <span class="field-label-note">LastReplay.rep</span>
+          </span>
+          <p class="field-hint">
+            StarCraft overwrites this one file after every game, which is what triggers a review.
+          </p>
+          <div class="path-row">
+            <input type="text" id="replay-path" spellcheck="false" autocomplete="off" />
+            <button type="button" id="browse-replay" class="button button-quiet">Browse…</button>
+          </div>
+          <p class="validity" id="replay-validity"></p>
+        </div>
+
+        <details class="advanced">
+          <summary>Advanced</summary>
+          <div class="field">
+            <span class="field-label">Port</span>
+            <p class="field-hint">
+              Only change this if something else on your PC already uses it. Changing it restarts
+              the overlay server, so update the URL in OBS to match.
+            </p>
+            <div class="path-row">
+              <input type="number" id="port" min="1" max="65535" class="port-input" />
+              <button type="button" id="apply-port" class="button button-quiet">Apply</button>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <!-- Activity ------------------------------------------------------------ -->
+      <section class="card">
+        <div class="card-header">
+          <h2 class="card-title">Games reviewed</h2>
+          <button type="button" id="review-once" class="button button-quiet">Review a past replay…</button>
+        </div>
+        <ul class="review-list" id="review-list">
+          <li class="empty" id="review-empty">Nothing yet — play a game, or review a past replay.</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">Activity</h2>
+        <ul class="log" id="log"></ul>
+      </section>
+
+      <p class="footer-note">
+        Leave this window open while you play. Closing it stops the overlay. Nothing is sent
+        anywhere — the overlay is served only to this PC.
+      </p>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

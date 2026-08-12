@@ -1,21 +1,52 @@
 {
   "name": "bw-ladder-review-overlay",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Reviews and grades your StarCraft: Remastered ladder games as you finish them, and serves the report card as an OBS browser overlay.",
   "type": "module",
-  "main": "src/main.js",
+  "main": "main/main.cjs",
+  "author": "Platinum Esport",
   "license": "UNLICENSED",
   "scripts": {
-    "start": "node src/main.js",
+    "start": "electron .",
     "review": "node src/main.js --once",
+    "serve": "node src/main.js",
     "build:native": "native\\build-stats.bat",
-    "build:exe": "node build/build-exe.mjs"
+    "dist": "electron-builder --win portable"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
-    "esbuild": "^0.24.0",
-    "postject": "^1.0.0-alpha.6"
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.platinumesport.bwladderreview",
+    "productName": "BW Ladder Review Overlay",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main/**/*",
+      "renderer/**/*",
+      "src/**/*",
+      "web/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "native/bwstats.exe",
+        "to": "bwstats.exe"
+      }
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "BWLadderReview.exe"
+    }
   }
 }
