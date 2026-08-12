@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { decodeReplayContainer } from './replayContainer.js';
 import { findLeaveGameEvents, findChatEvents, countActionsByPlayerId } from './commandStream.js';
-import { gradeMatch } from './gradeMatch.js';
+import { gradeMatch, extractMetrics } from './gradeMatch.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -423,14 +423,15 @@ export async function computeMatchStats(opts) {
     // can't grade fairly (a game too short to have macro to judge, a non-1v1, an
     // unidentified self player, or samples from a bwstats.exe predating the extra
     // columns) - callers treat that as "show the plain stats instead".
-    const grades = gradeMatch({
+    const gradeInputs = {
       samples,
       players,
       selfSlot,
       sampleIntervalFrames,
       actionsByPlayerId: countActionsByPlayerId(commands),
       slotByPlayerId,
-    });
+    };
+    const grades = gradeMatch({ ...gradeInputs, calibration: opts.calibration });
 
     return {
       durationSeconds,
@@ -439,6 +440,10 @@ export async function computeMatchStats(opts) {
       players: perPlayer,
       keyMoment,
       grades,
+      // The raw, ungraded measurements. Training (src/trainer.js) collects these across a
+      // batch of replays to build the calibration that `opts.calibration` later supplies;
+      // normal reviews ignore the field.
+      gradeMetrics: extractMetrics(gradeInputs),
     };
   } finally {
     if (!opts.workDir) fs.rmSync(workDir, { recursive: true, force: true });

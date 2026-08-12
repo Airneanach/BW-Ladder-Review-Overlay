@@ -94,6 +94,22 @@
           <p class="validity" id="replay-validity"></p>
         </div>
 
+        <div class="field">
+          <span class="field-label">
+            Replay folder
+            <span class="field-label-note">for training, below</span>
+          </span>
+          <p class="field-hint">
+            Searched, including subfolders like <code>AutoSave</code>, when calibrating grading to
+            your play.
+          </p>
+          <div class="path-row">
+            <input type="text" id="replay-folder" spellcheck="false" autocomplete="off" />
+            <button type="button" id="browse-folder" class="button button-quiet">Browse…</button>
+          </div>
+          <p class="validity" id="folder-validity"></p>
+        </div>
+
         <details class="advanced">
           <summary>Advanced</summary>
           <div class="field">
@@ -108,6 +124,34 @@
             </div>
           </div>
         </details>
+      </section>
+
+      <!-- Training ------------------------------------------------------------ -->
+      <section class="card">
+        <div class="card-header">
+          <h2 class="card-title">Grade against your own play</h2>
+          <span class="trained-badge" id="trained-badge" hidden></span>
+        </div>
+        <p class="card-note">
+          Out of the box the grades compare you with the player the app was tuned on, so they can
+          read harshly or generously for you. Training reviews your past games and rebuilds the
+          grade boundaries from <em>your</em> own numbers — a normal game for you becomes a C,
+          your best become As. It all happens on this PC; nothing is uploaded.
+        </p>
+
+        <div class="train-row">
+          <button type="button" id="train-start" class="button">Train on my replays</button>
+          <button type="button" id="train-cancel" class="button button-quiet" hidden>Cancel</button>
+          <button type="button" id="train-reset" class="button button-quiet" hidden>Reset to built-in</button>
+          <span class="train-note" id="train-note">Takes a minute or two for 100 games.</span>
+        </div>
+
+        <div class="progress" id="train-progress" hidden>
+          <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+          <p class="progress-text" id="progress-text"></p>
+        </div>
+
+        <ul class="trained-metrics" id="trained-metrics"></ul>
       </section>
 
       <!-- Activity ------------------------------------------------------------ -->

@@ -443,6 +443,84 @@ input:focus-visible {
   padding: 8px 0 2px;
 }
 
+/* --- Training ------------------------------------------------------------- */
+
+.trained-badge {
+  flex: none;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--good-wash);
+  color: var(--good);
+  border: 1px solid var(--good);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.train-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.train-note {
+  color: var(--ink-faint);
+  font-size: 12.5px;
+}
+
+.progress {
+  margin-top: 14px;
+}
+
+.progress-bar {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--surface-quiet);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+
+.progress-text {
+  margin: 7px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trained-metrics {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 7px 16px;
+}
+
+.trained-metrics li {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px dotted var(--line);
+  padding-bottom: 3px;
+}
+
+.trained-metrics .metric-value {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 /* --- Log ------------------------------------------------------------------ */
 
 .log {

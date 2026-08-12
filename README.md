@@ -48,17 +48,53 @@ Settings, match history and a crash log live in
 `%APPDATA%\bw-ladder-review-overlay\`. Nothing is written next to the exe, because the
 portable build unpacks itself to a new temporary folder on every run.
 
+## Train it on your own play
+
+**Do this first — otherwise the grades describe someone else.**
+
+The built-in grade boundaries were tuned by eye against one player's replay history, so out
+of the box they measure you against *that* player. If your APM is 90 you would sit at F for
+ever; if you are much stronger, nothing would ever drop below an A. Either way the grade
+stops telling you anything.
+
+Press **Train on my replays**. It reviews your past games — up to 100, newest first, about a
+minute or two — and rebuilds the boundaries from your own numbers, so a normal game for you
+becomes a C and your best become As. Then a grade means "compared with how you normally
+play", which is the thing worth knowing.
+
+It is entirely local. Your replays are simulated on your PC by the same bundled simulator a
+normal review uses; nothing is uploaded, nothing is downloaded, and there is no model beyond
+a small table of numbers in `%APPDATA%\bw-ladder-review-overlay\calibration.json`.
+
+The card shows your median for each measure once trained — worth a glance, since those are
+numbers you can check against your own sense of your play. **Reset to built-in** puts the
+shipped grading back. Retrain every few weeks if you are improving, or your own past becomes
+the thing holding your grades down.
+
+Details worth knowing:
+
+- **Newest first**, so a capped run reflects how you play now rather than three years ago.
+- Games under four minutes, team games and games none of your names played in are skipped;
+  the summary says how many of each.
+- **At least 12 usable games** are needed. Below that the percentiles are noise and it
+  declines to train rather than making grading worse.
+- **Two measures stay absolute** and are deliberately *not* personalised: `Income vs
+  opponent` and `Army vs opponent` are head-to-head, so matching your opponent means the
+  same thing whoever is playing; and `Excess supply` encodes a mechanical optimum, so
+  scoring it against your own habits would tell a chronically supply-blocked player that
+  being supply-blocked is fine.
+
 ## What the grades mean
 
 The **inputs** are objective — real harvested totals, real worker/base counts, real army
 value, real supply-blocked time, and effective APM from the command stream (raw APM minus
 commands repeated unchanged within a second).
 
-The **grading** is a judgement call. The anchor tables in
-[`src/gradeMatch.js`](src/gradeMatch.js) are calibrated so the median game across the
-project's own 149-replay history lands near a C, with the range spread across F to A. Each
-is a short list of `(value, score)` points, so moving a boundary is a one-line edit. Retune
-them to taste.
+The **grading** is a judgement call, and after training it is a judgement call about you.
+The default anchor tables in [`src/gradeMatch.js`](src/gradeMatch.js) put the median game of
+the project's own 149-replay history near a C; training replaces five of them from your own
+distribution (see [`src/calibration.js`](src/calibration.js)). Each is a short list of
+`(value, score)` points, so moving a boundary by hand is still a one-line edit.
 
 Three deliberate exclusions: samples at 200 supply don't count as supply-blocked (a maxed
 player is blocked by definition, and grading that down punishes whoever built the best
@@ -132,6 +168,8 @@ main/main.cjs               Electron main: window, settings, drives the review s
 main/preload.cjs            the renderer's only route out (contextIsolation)
 renderer/                   the settings window
 src/reviewServer.js         watch → simulate → grade → serve, with no opinion about the UI
+src/trainer.js              scans the replay folder and reviews a batch, for training
+src/calibration.js          turns those games into grade boundaries for this player
 src/main.js                 console entry point, same engine without a window
 src/config.js               config.json + argv, for the console entry only
 src/detect.js               finds StarCraft and the replay file
@@ -187,6 +225,15 @@ leave state the packaged build then picks up.
 **Only one copy can run at a time.** They all want the same port, so a forgotten `npm start`
 will make the packaged exe report `Port 3712 is already in use` instead of serving. It says
 so in its Activity log rather than failing silently.
+
+**The packaged app's process name is the productName**, `BW Ladder Review Overlay` — *not*
+`BWLadderReview`. `Get-Process BWLadderReview` matches nothing, so it is easy to leave an old
+build running, holding the port, answering `/health` with stale data and making a fresh build
+look broken. To be sure nothing is left over:
+
+```powershell
+Get-Process | Where-Object { $_.ProcessName -match 'BW Ladder Review|electron' } | Stop-Process -Force
+```
 
 ## Licences
 

@@ -52,14 +52,41 @@ process.on('unhandledRejection', (error) => recordFatal('unhandledRejection', er
 
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
 const historyPath = () => path.join(app.getPath('userData'), 'match-history.json');
+const calibrationPath = () => path.join(app.getPath('userData'), 'calibration.json');
 
 function defaultSettings() {
+  const lastReplayPath = (detect && detect.detectLastReplayPath()) || '';
   return {
     playerNames: [],
     installPath: (detect && detect.detectInstallPath()) || '',
-    lastReplayPath: (detect && detect.detectLastReplayPath()) || '',
+    lastReplayPath,
+    // The folder training scans. Defaults to the folder LastReplay.rep sits in, which is the
+    // Replays folder, whose AutoSave subfolder is where a ladder history actually accumulates.
+    replayFolder: lastReplayPath ? path.dirname(lastReplayPath) : '',
     port: (detect && detect.DEFAULT_PORT) || 3712,
   };
+}
+
+/** The trained anchor tables, or null when the user has not trained yet. */
+function loadCalibration() {
+  const file = calibrationPath();
+  if (!fs.existsSync(file)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, ''));
+  } catch (err) {
+    log(`Could not read the trained grading data (${err.message}) - using the defaults.`, 'bad');
+    return null;
+  }
+}
+
+function saveCalibration(calibration) {
+  try {
+    fs.mkdirSync(path.dirname(calibrationPath()), { recursive: true });
+    if (calibration) fs.writeFileSync(calibrationPath(), JSON.stringify(calibration, null, 2));
+    else if (fs.existsSync(calibrationPath())) fs.rmSync(calibrationPath());
+  } catch (err) {
+    log(`Could not save the trained grading data: ${err.message}`, 'bad');
+  }
 }
 
 function loadSettings() {
@@ -177,11 +204,16 @@ async function startServer(settings) {
     },
   });
 
+  const calibration = loadCalibration();
   server.setConfig({
     installPath: settings.installPath || null,
     lastReplayPath: settings.lastReplayPath || null,
     playerNames: settings.playerNames,
+    calibration,
   });
+  if (calibration) {
+    log(`Grading is calibrated to your own play (${calibration.games} games).`);
+  }
 
   try {
     await server.listen(settings.port);
@@ -247,6 +279,7 @@ ipcMain.handle('settings:load', () => ({
   status: server ? server.status() : null,
   activity: activityLog,
   recent: server ? server.store.list(10) : [],
+  training: trainingState(),
 }));
 
 ipcMain.handle('settings:save', async (_event, patch) => {
@@ -328,8 +361,133 @@ ipcMain.handle('overlay:open', () =>
  * that in red as "path does not exist" made a working setup look broken, which is the single
  * most expensive kind of wrong message this app can show.
  */
-ipcMain.handle('path:validate', (_event, { kind, value }) => {
+// ---------------------------------------------------------------------------
+// Training: calibrating the grades to this user's own play.
+//
+// The shipped anchor tables were tuned against one player's replay history, so out of the box
+// the grades describe how someone compares with *that* player. Training re-simulates a batch of
+// the user's own games and rebuilds those tables from their own distribution, which is the only
+// way to make a grade mean "compared with how you normally play". All local - see
+// src/trainer.js and src/calibration.js.
+// ---------------------------------------------------------------------------
+
+let training = null; // { cancelled, progress } while a run is in flight
+
+function trainingState() {
+  const calibration = loadCalibration();
+  return {
+    running: Boolean(training),
+    progress: training ? training.progress : null,
+    calibration: calibration
+      ? {
+        games: calibration.games,
+        trainedAt: calibration.trainedAt,
+        metrics: Object.entries(calibration.metrics).map(([key, v]) => ({ key, median: v.median, samples: v.samples })),
+      }
+      : null,
+  };
+}
+
+function sendTraining() {
+  if (mainWindow) mainWindow.webContents.send('training', trainingState());
+}
+
+ipcMain.handle('train:start', async (_event, { limit } = {}) => {
+  if (training) return { ok: false, message: 'Training is already running.' };
+
+  const settings = loadSettings();
+  const folder = settings.replayFolder
+    || (settings.lastReplayPath ? path.dirname(settings.lastReplayPath) : '');
+
+  training = { cancelled: false, progress: { total: 0, reviewed: 0, used: 0, current: null, done: false } };
+  sendTraining();
+
+  const { trainCalibration } = await importEsm('src/trainer.js');
+  try {
+    log(`Training on your replays in ${folder} - this takes a minute or two.`);
+    const { calibration, report } = await trainCalibration({
+      replayFolder: folder,
+      installPath: settings.installPath,
+      bwstatsPath: bwstatsPath(),
+      playerNames: settings.playerNames,
+      limit: limit || undefined,
+      onProgress: progress => {
+        training.progress = progress;
+        sendTraining();
+      },
+      isCancelled: () => training.cancelled,
+    });
+
+    if (report.cancelled && !calibration) {
+      log('Training cancelled - grading is unchanged.', 'warn');
+      return { ok: false, cancelled: true, report };
+    }
+    if (!calibration) {
+      log(
+        `Not enough usable games to calibrate: found ${report.counts.total} replays, ` +
+        `${report.games} of them yours and long enough (need ${report.needed}). ` +
+        `Grading is unchanged.`,
+        'warn'
+      );
+      return { ok: false, report };
+    }
+
+    saveCalibration(calibration);
+    if (server) server.setConfig({ calibration });
+    const parts = [`Trained on ${calibration.games} of your games - grading is now calibrated to your play.`];
+    if (report.skipped.length) {
+      parts.push(`Still on defaults: ${report.skipped.map(s => s.label).join(', ')}.`);
+    }
+    log(parts.join(' '), 'good');
+    return { ok: true, report };
+  } catch (err) {
+    log(`Training failed: ${err.message}`, 'bad');
+    return { ok: false, message: err.message };
+  } finally {
+    training = null;
+    sendTraining();
+    sendStatus();
+  }
+});
+
+ipcMain.handle('train:cancel', () => {
+  if (!training) return { ok: false };
+  // Flagged rather than killed: the trainer checks between replays, so the simulator process
+  // in flight is allowed to finish instead of being left half-read.
+  training.cancelled = true;
+  log('Cancelling training after the current replay...', 'warn');
+  return { ok: true };
+});
+
+ipcMain.handle('train:reset', () => {
+  saveCalibration(null);
+  if (server) server.setConfig({ calibration: null });
+  log('Trained grading data cleared - back to the built-in grading.', 'warn');
+  sendTraining();
+  sendStatus();
+  return { ok: true };
+});
+
+ipcMain.handle('path:validate', async (_event, { kind, value }) => {
   if (!value) return { level: 'bad', message: 'Not set.' };
+
+  if (kind === 'folder') {
+    if (!fs.existsSync(value)) return { level: 'bad', message: 'That folder does not exist.' };
+    // Counting is the only validation worth doing here: "the folder exists" tells the user
+    // nothing, whereas "3 replays" immediately explains why training will say there is not
+    // enough to work with.
+    try {
+      const { findReplays } = await importEsm('src/trainer.js');
+      const count = findReplays(value, { limit: 500 }).length;
+      if (count === 0) return { level: 'bad', message: 'No .rep files in here or its subfolders.' };
+      return {
+        level: 'good',
+        message: `${count}${count === 500 ? '+' : ''} replay${count === 1 ? '' : 's'} found, including subfolders.`,
+      };
+    } catch (err) {
+      return { level: 'bad', message: `Could not read that folder: ${err.message}` };
+    }
+  }
 
   if (kind === 'install') {
     if (!fs.existsSync(value)) return { level: 'bad', message: 'That folder does not exist.' };

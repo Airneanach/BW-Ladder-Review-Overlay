@@ -14,8 +14,10 @@
   const nameError = el('name-error');
   const installPath = el('install-path');
   const replayPath = el('replay-path');
+  const replayFolder = el('replay-folder');
   const installValidity = el('install-validity');
   const replayValidity = el('replay-validity');
+  const folderValidity = el('folder-validity');
   const portInput = el('port');
   const reviewList = el('review-list');
   const reviewEmpty = el('review-empty');
@@ -116,6 +118,7 @@
     setInterval(() => {
       void showValidity('install', settings.installPath, installValidity);
       void showValidity('replay', settings.lastReplayPath, replayValidity);
+      void showValidity('folder', settings.replayFolder, folderValidity);
     }, 5000);
   }
 
@@ -147,6 +150,20 @@
     replayPath.value = picked;
     await save({ lastReplayPath: picked });
     await showValidity('replay', picked, replayValidity);
+  });
+
+  el('browse-folder').addEventListener('click', async () => {
+    const picked = await window.review.pickFolder('Where are your replays?', settings.replayFolder);
+    if (!picked) return;
+    replayFolder.value = picked;
+    await save({ replayFolder: picked });
+    await showValidity('folder', picked, folderValidity);
+  });
+
+  replayFolder.addEventListener('blur', async () => {
+    if (replayFolder.value === settings.replayFolder) return;
+    await save({ replayFolder: replayFolder.value.trim() });
+    await showValidity('folder', settings.replayFolder, folderValidity);
   });
 
   el('apply-port').addEventListener('click', async () => {
@@ -230,6 +247,91 @@
     }
   }
 
+  // --- training ------------------------------------------------------------
+
+  const METRIC_LABELS = {
+    workerRatio: 'Economy size',
+    baseRatio: 'Bases taken',
+    meanBank: 'Unspent resources',
+    supplyBlockedPct: 'Supply blocked',
+    eapm: 'Effective APM',
+  };
+
+  /** Medians are what a user can sanity-check against their own sense of their play. */
+  function formatMedian(key, value) {
+    if (!Number.isFinite(value)) return '–';
+    if (key === 'eapm') return `${Math.round(value)} APM`;
+    if (key === 'meanBank') return `${Math.round(value)} banked`;
+    if (key === 'supplyBlockedPct') return `${value.toFixed(1)}%`;
+    // The two ratios are against the length-scaled target, so a percentage reads better than
+    // a bare 0.83.
+    return `${Math.round(value * 100)}% of target`;
+  }
+
+  function renderTraining(state) {
+    const running = state.running;
+    el('train-start').hidden = running;
+    el('train-cancel').hidden = !running;
+    el('train-reset').hidden = running || !state.calibration;
+    el('train-progress').hidden = !running;
+
+    const badge = el('trained-badge');
+    const metricsList = el('trained-metrics');
+    metricsList.innerHTML = '';
+
+    if (state.calibration) {
+      const when = new Date(state.calibration.trainedAt);
+      badge.hidden = false;
+      badge.textContent = `Trained on ${state.calibration.games} games`;
+      badge.title = Number.isNaN(when.getTime()) ? '' : `Trained ${when.toLocaleString()}`;
+      el('train-note').textContent = state.calibration.games
+        ? 'Retrain after a few weeks of play to keep it current.'
+        : '';
+      for (const m of state.calibration.metrics) {
+        const li = document.createElement('li');
+        const label = document.createElement('span');
+        label.textContent = `${METRIC_LABELS[m.key] || m.key} · your median`;
+        const value = document.createElement('span');
+        value.className = 'metric-value';
+        value.textContent = formatMedian(m.key, m.median);
+        li.append(label, value);
+        metricsList.append(li);
+      }
+    } else {
+      badge.hidden = true;
+      if (!running) el('train-note').textContent = 'Takes a minute or two for 100 games.';
+    }
+
+    if (running && state.progress) {
+      const p = state.progress;
+      const total = p.total || 0;
+      const pct = total ? Math.round((p.index / total) * 100) : 0;
+      el('progress-fill').style.width = `${pct}%`;
+      el('progress-text').textContent = p.done
+        ? 'Building your grade boundaries…'
+        : `Reviewing ${p.index + 1} of ${total} — ${p.used} usable so far${p.current ? ` — ${p.current}` : ''}`;
+    }
+  }
+
+  el('train-start').addEventListener('click', async () => {
+    if (settings.playerNames.length === 0) {
+      nameError.textContent = 'Add your in-game name first - training needs to know which player is you.';
+      nameError.hidden = false;
+      newName.focus();
+      return;
+    }
+    const res = await window.review.trainStart();
+    if (res && res.ok === false && res.message) {
+      el('train-note').textContent = res.message;
+    }
+  });
+
+  el('train-cancel').addEventListener('click', () => window.review.trainCancel());
+
+  el('train-reset').addEventListener('click', async () => {
+    await window.review.trainReset();
+  });
+
   // --- status + log --------------------------------------------------------
 
   function renderStatus(status) {
@@ -280,6 +382,7 @@
 
   window.review.onStatus(renderStatus);
   window.review.onActivity(appendLog);
+  window.review.onTraining(renderTraining);
   window.review.onReviewed(() => {
     void window.review.loadSettings().then((state) => renderReviews(state.recent));
   });
@@ -290,6 +393,7 @@
 
     installPath.value = settings.installPath || '';
     replayPath.value = settings.lastReplayPath || '';
+    replayFolder.value = settings.replayFolder || '';
     portInput.value = settings.port;
     overlayUrl.value = `http://127.0.0.1:${(state.status && state.status.port) || settings.port}/`;
 
@@ -298,8 +402,11 @@
     for (const entry of state.activity || []) appendLog(entry);
     renderStatus(state.status);
 
+    renderTraining(state.training || { running: false, calibration: null });
+
     await showValidity('install', settings.installPath, installValidity);
     await showValidity('replay', settings.lastReplayPath, replayValidity);
+    await showValidity('folder', settings.replayFolder, folderValidity);
     watchValidity();
 
     // Belt and braces with overflow-anchor in the stylesheet: whatever the layout does while

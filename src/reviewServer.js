@@ -31,7 +31,9 @@ export class ReviewServer {
     this.onEvent = onEvent;
     this.store = new MatchStore({ persistPath: historyPath });
 
-    this.config = { installPath: null, lastReplayPath: null, playerNames: [], sampleIntervalFrames: 24 };
+    // `calibration` is null until the user trains on their own replays; the grader falls back
+    // to its shipped anchor tables when it is.
+    this.config = { installPath: null, lastReplayPath: null, playerNames: [], sampleIntervalFrames: 24, calibration: null };
     this.reviewing = false;
     this.lastError = null;
     this.port = null;
@@ -88,6 +90,7 @@ export class ReviewServer {
         bwstatsPath: this.bwstatsPath,
         sampleIntervalFrames: this.config.sampleIntervalFrames,
         selfPlayerNames: this.config.playerNames,
+        calibration: this.config.calibration,
       });
       const row = this.store.add(stats, { replayPath, playerNames: this.config.playerNames });
       this.lastError = null;
@@ -132,6 +135,11 @@ export class ReviewServer {
       watching: this.config.lastReplayPath,
       installPath: this.config.installPath,
       playerNames: this.config.playerNames,
+      // Reported so it is visible whether grades are being produced against this player's own
+      // games or the shipped defaults - the difference matters when reading a grade.
+      calibration: this.config.calibration
+        ? { games: this.config.calibration.games, trainedAt: this.config.calibration.trainedAt }
+        : null,
     };
   }
 

@@ -20,6 +20,16 @@ contextBridge.exposeInMainWorld('review', {
   validatePath: (kind, value) => ipcRenderer.invoke('path:validate', { kind, value }),
 
   reviewOnce: (replayPath) => ipcRenderer.invoke('review:once', replayPath ?? null),
+
+  trainStart: (limit) => ipcRenderer.invoke('train:start', { limit }),
+  trainCancel: () => ipcRenderer.invoke('train:cancel'),
+  trainReset: () => ipcRenderer.invoke('train:reset'),
+  onTraining: (handler) => {
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on('training', listener);
+    return () => ipcRenderer.removeListener('training', listener);
+  },
+
   copyOverlayUrl: () => ipcRenderer.invoke('overlay:copyUrl'),
   openOverlay: () => ipcRenderer.invoke('overlay:open'),
 
