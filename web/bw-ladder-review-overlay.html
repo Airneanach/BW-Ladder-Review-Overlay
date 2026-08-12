@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=1920, height=1080, initial-scale=1" />
+  <title>BW Ladder Review Overlay</title>
+  <style>
+    :root {
+      --text-fill: #e8e2d0;
+      --accent: #c9a24b;
+      --win: #6fcf6f;
+      --loss: #e06666;
+      --card-bg: rgba(10, 16, 22, 0.88);
+      --card-border: rgba(201, 162, 75, 0.4);
+      /* Grade colours, keyed off the letter's first character. Deliberately not the
+         same green/red as win/loss above: a graded category is a judgement about play,
+         not about the result, and a stream viewer should not read "F" as "lost". */
+      --grade-a: #7ee081;
+      --grade-b: #b8dd63;
+      --grade-c: #ffd34e;
+      --grade-d: #f0964b;
+      --grade-f: #ef5f5f;
+    }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+    }
+
+    body {
+      font-family: "Valve Oracle", "Oracle", "Trebuchet MS", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: geometricPrecision;
+      color: var(--text-fill);
+    }
+
+    #root {
+      opacity: 0;
+      transition: opacity 0.4s ease;
+      pointer-events: none;
+    }
+
+    #root.visible {
+      opacity: 1;
+    }
+
+    .result-banner {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 27px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 18px 48px;
+      white-space: nowrap;
+    }
+
+    .result-word {
+      font-size: 59px;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+
+    .result-word.win { color: var(--win); }
+    .result-word.loss { color: var(--loss); }
+    .result-word.unknown { color: var(--text-fill); opacity: 0.7; }
+
+    .result-details {
+      display: flex;
+      flex-direction: column;
+      font-size: 27px;
+      line-height: 1.4;
+      opacity: 0.9;
+    }
+
+    .result-details .matchup {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .stats-panel {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      width: 414px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 11px;
+      padding: 19px 25px;
+      font-size: 22px;
+      line-height: 1.6;
+    }
+
+    .stats-panel .stat-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 17px;
+    }
+
+    .stats-panel .stat-label {
+      opacity: 0.75;
+    }
+
+    .stats-panel .stat-value {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .key-moment {
+      margin-top: 13px;
+      padding-top: 13px;
+      border-top: 1px solid var(--card-border);
+      font-size: 20px;
+      line-height: 1.4;
+    }
+
+    /* --- Advanced style: the graded report card ---------------------------------
+       Only one of .stats-panel / .report-card is ever in the layout; which one is
+       decided by the style class on #root (see applyStyle in the script below). */
+    #root.style-simple .report-card { display: none; }
+    #root.style-advanced .stats-panel { display: none; }
+    /* An advanced overlay showing a game the grader declined (a 2-minute all-in, say)
+       falls back to the plain stats rather than an empty card. */
+    #root.style-advanced.no-grades .report-card { display: none; }
+    #root.style-advanced.no-grades .stats-panel { display: block; }
+
+    .report-card {
+      position: absolute;
+      /* Centred under the result banner rather than beside it: at 1920 wide a card wide
+         enough to hold a category row without truncating its detail text overlaps a
+         centred banner, and the two stacked read as one post-game summary anyway. */
+      top: 148px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 900px;
+      display: flex;
+      align-items: stretch;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 11px;
+      overflow: hidden;
+    }
+
+    .report-card .grade-side {
+      flex: 0 0 250px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 22px 18px;
+      border-right: 1px solid var(--card-border);
+    }
+
+    .report-card .grade-title {
+      font-size: 21px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-align: center;
+      line-height: 1.25;
+      opacity: 0.92;
+    }
+
+    .report-card .grade-letter {
+      font-size: 86px;
+      font-weight: 700;
+      line-height: 1;
+      /* The glow is what makes the letter read as a verdict rather than as another
+         stat. currentColor keeps it in whatever colour the grade resolved to. */
+      text-shadow: 0 0 26px currentColor;
+    }
+
+    .report-card .grade-caption {
+      font-size: 17px;
+      opacity: 0.6;
+      letter-spacing: 0.5px;
+    }
+
+    .report-card .grade-lists {
+      flex: 1 1 auto;
+      padding: 18px 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .report-card .list-heading {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: 1.6px;
+      margin-bottom: 2px;
+    }
+
+    .report-card .list-heading.negatives { margin-top: 12px; }
+    .report-card .list-heading.positives { color: var(--grade-a); }
+    .report-card .list-heading.negatives { color: var(--grade-f); }
+
+    .report-card .grade-row {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      font-size: 23px;
+      line-height: 1.45;
+      white-space: nowrap;
+    }
+
+    .report-card .grade-row .row-letter {
+      flex: 0 0 46px;
+      font-weight: 700;
+      text-align: right;
+    }
+
+    .report-card .grade-row .row-detail {
+      font-size: 17px;
+      opacity: 0.5;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .report-card .card-footer {
+      border-top: 1px solid var(--card-border);
+      margin-top: 12px;
+      padding-top: 10px;
+      font-size: 17px;
+      opacity: 0.75;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <div class="result-banner">
+      <div class="result-word" id="result-word"></div>
+      <div class="result-details">
+        <div class="matchup" id="matchup"></div>
+        <div id="game-info"></div>
+      </div>
+    </div>
+    <div class="stats-panel">
+      <div class="stat-row">
+        <span class="stat-label">Supply blocked</span>
+        <span class="stat-value" id="stat-supply-blocked"></span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Avg. float (min)</span>
+        <span class="stat-value" id="stat-float-minerals"></span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Avg. float (gas)</span>
+        <span class="stat-value" id="stat-float-gas"></span>
+      </div>
+      <div class="key-moment" id="key-moment"></div>
+    </div>
+    <div class="report-card">
+      <div class="grade-side">
+        <div class="grade-title" id="grade-title">STREAMER'S PLAY QUALITY</div>
+        <div class="grade-letter" id="grade-letter"></div>
+        <div class="grade-caption" id="grade-caption"></div>
+      </div>
+      <div class="grade-lists">
+        <div class="list-heading positives">POSITIVES</div>
+        <div id="positives"></div>
+        <div class="list-heading negatives">NEGATIVES</div>
+        <div id="negatives"></div>
+        <div class="card-footer" id="card-footer"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const search = new URLSearchParams(window.location.search);
+      // Sent for compatibility with the multi-user bot server this page was first written
+      // against. The local review server has exactly one user and ignores it.
+      const account = (search.get('account') || 'local').trim().toLowerCase();
+      const pollMs = Math.max(Number(search.get('pollMs') || 4000), 1000);
+      const holdMs = Math.max(Number(search.get('holdMs') || 15000), 1000);
+      // 'advanced' is the graded report card, which is the whole point of the review
+      // overlay, so it is the default here (the bot-served copy of this page defaults to
+      // 'simple' instead). '?style=simple' gets the plain result banner + three stats.
+      const style = search.get('style') === 'simple' ? 'simple' : 'advanced';
+      // How many categories the report card lists on each side. Two matches the design;
+      // more fits, up to a point, for anyone who wants a denser card.
+      const listCount = Math.min(Math.max(Number(search.get('listCount') || 2), 1), 4);
+
+      const root = document.getElementById('root');
+      const resultWordEl = document.getElementById('result-word');
+      const matchupEl = document.getElementById('matchup');
+      const gameInfoEl = document.getElementById('game-info');
+      const supplyBlockedEl = document.getElementById('stat-supply-blocked');
+      const floatMineralsEl = document.getElementById('stat-float-minerals');
+      const floatGasEl = document.getElementById('stat-float-gas');
+      const keyMomentEl = document.getElementById('key-moment');
+      const gradeTitleEl = document.getElementById('grade-title');
+      const gradeLetterEl = document.getElementById('grade-letter');
+      const gradeCaptionEl = document.getElementById('grade-caption');
+      const positivesEl = document.getElementById('positives');
+      const negativesEl = document.getElementById('negatives');
+      const cardFooterEl = document.getElementById('card-footer');
+
+      if (search.get('title')) gradeTitleEl.textContent = search.get('title');
+
+      root.classList.add(`style-${style}`);
+
+      let lastShownMatchId = null;
+      let hideTimer = null;
+
+      const RACE_LABEL = { zerg: 'Z', terran: 'T', protoss: 'P' };
+
+      function formatClock(totalSeconds) {
+        const s = Math.max(0, Math.round(totalSeconds || 0));
+        const m = Math.floor(s / 60);
+        const r = s % 60;
+        return `${m}:${String(r).padStart(2, '0')}`;
+      }
+
+      function raceLetter(race) {
+        return RACE_LABEL[(race || '').toLowerCase()] || '?';
+      }
+
+      function gradeColor(letter) {
+        const band = String(letter || '').charAt(0).toUpperCase();
+        return `var(--grade-${'ABCDF'.includes(band) ? band.toLowerCase() : 'c'})`;
+      }
+
+      /** The report card arrives as the JSON gradeMatch.js produced, stored whole on the
+       *  match row. Null/absent (a game too short to grade, or a companion app older than
+       *  the grader) is normal and handled by the caller, not an error. */
+      function parseGrades(match) {
+        if (!match.grades_json) return null;
+        try {
+          const grades = JSON.parse(match.grades_json);
+          return grades && Array.isArray(grades.categories) && grades.categories.length ? grades : null;
+        } catch (e) {
+          console.error('[bw-match-overlay] Could not parse grades_json:', e);
+          return null;
+        }
+      }
+
+      function renderGradeRows(container, categories) {
+        container.innerHTML = '';
+        for (const category of categories) {
+          const row = document.createElement('div');
+          row.className = 'grade-row';
+
+          const letter = document.createElement('span');
+          letter.className = 'row-letter';
+          letter.textContent = category.letter;
+          letter.style.color = gradeColor(category.letter);
+
+          const label = document.createElement('span');
+          label.textContent = category.label;
+
+          row.append(letter, label);
+          if (category.detail) {
+            const detail = document.createElement('span');
+            detail.className = 'row-detail';
+            detail.textContent = category.detail;
+            row.append(detail);
+          }
+          container.append(row);
+        }
+      }
+
+      function renderReportCard(grades, match) {
+        gradeLetterEl.textContent = grades.overallLetter;
+        gradeLetterEl.style.color = gradeColor(grades.overallLetter);
+        gradeCaptionEl.textContent = `${grades.overallScore}/100`;
+
+        // categories arrive sorted best-first, so the two ends of the same list are the
+        // positives and the negatives. With few enough categories to overlap, the
+        // negatives give way rather than repeating a row on both sides.
+        const categories = grades.categories;
+        const positives = categories.slice(0, listCount);
+        const negatives = categories.slice(Math.max(listCount, categories.length - listCount)).reverse();
+        renderGradeRows(positivesEl, positives);
+        renderGradeRows(negativesEl, negatives);
+
+        if (match.key_moment_text) {
+          cardFooterEl.textContent = match.key_moment_text;
+          cardFooterEl.style.display = '';
+        } else {
+          cardFooterEl.textContent = '';
+          cardFooterEl.style.display = 'none';
+        }
+      }
+
+      function render(match) {
+        const result = (match.result || 'unknown').toLowerCase();
+        resultWordEl.textContent = result === 'win' ? 'WIN' : result === 'loss' ? 'LOSS' : 'UNKNOWN';
+        resultWordEl.className = 'result-word ' + (result === 'win' || result === 'loss' ? result : 'unknown');
+
+        matchupEl.textContent = `${raceLetter(match.my_race)}v${raceLetter(match.opponent_race)}`;
+        const parts = [];
+        if (match.opponent_name) parts.push(`vs ${match.opponent_name}`);
+        if (match.map_name) parts.push(match.map_name);
+        if (match.duration_seconds != null) parts.push(formatClock(match.duration_seconds));
+        gameInfoEl.textContent = parts.join(' · ');
+
+        supplyBlockedEl.textContent = formatClock(match.supply_blocked_seconds);
+        floatMineralsEl.textContent = match.avg_unspent_minerals != null ? Math.round(match.avg_unspent_minerals) : '-';
+        floatGasEl.textContent = match.avg_unspent_gas != null ? Math.round(match.avg_unspent_gas) : '-';
+
+        if (match.key_moment_text) {
+          keyMomentEl.textContent = match.key_moment_text;
+          keyMomentEl.style.display = '';
+        } else {
+          keyMomentEl.textContent = '';
+          keyMomentEl.style.display = 'none';
+        }
+
+        // Both panels are rendered every time and the style classes decide which one is
+        // visible, so the simple layout is always ready as the advanced style's fallback
+        // for an ungraded game.
+        const grades = style === 'advanced' ? parseGrades(match) : null;
+        if (grades) renderReportCard(grades, match);
+        root.classList.toggle('no-grades', style === 'advanced' && !grades);
+      }
+
+      function show(match) {
+        render(match);
+        root.classList.add('visible');
+        if (hideTimer) clearTimeout(hideTimer);
+        hideTimer = setTimeout(() => {
+          root.classList.remove('visible');
+        }, holdMs);
+      }
+
+      async function poll() {
+        try {
+          const res = await fetch(`/api/bw/matches?account=${encodeURIComponent(account)}&limit=1`, { cache: 'no-store' });
+          const data = await res.json();
+          const latest = Array.isArray(data.matches) ? data.matches[0] : null;
+          if (latest && latest.result !== 'pending' && latest.id !== lastShownMatchId) {
+            lastShownMatchId = latest.id;
+            show(latest);
+          }
+        } catch (e) {
+          console.error('[bw-match-overlay] Failed to fetch matches:', e);
+        } finally {
+          setTimeout(poll, pollMs);
+        }
+      }
+
+      poll();
+    })();
+  </script>
+</body>
+</html>

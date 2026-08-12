@@ -1,0 +1,14 @@
+{
+  "_comment": "Copy this to config.json and put it beside BWLadderReview.exe. Every field is optional except playerNames - everything else is autodetected, and only needs setting if the autodetect gets it wrong.",
+
+  "playerNames": ["YourInGameName", "YourSmurfName"],
+
+  "_starcraftInstallPath": "Autodetected from the registry, then from the usual install folders. Set it if the app reports it could not find StarCraft.",
+  "starcraftInstallPath": "C:\\Program Files (x86)\\StarCraft",
+
+  "_lastReplayPath": "Autodetected under Documents\\StarCraft\\Maps\\Replays. Set it if your replays live elsewhere (a OneDrive-redirected Documents folder, or another drive).",
+  "lastReplayPath": "C:\\Users\\You\\Documents\\StarCraft\\Maps\\Replays\\LastReplay.rep",
+
+  "_port": "The port the overlay is served on. Change it only if something else already uses 3712.",
+  "port": 3712
+}

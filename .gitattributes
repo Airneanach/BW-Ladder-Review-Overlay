@@ -1,0 +1,2 @@
+# The shipped binaries must never be touched by line-ending conversion.
+*.exe binary

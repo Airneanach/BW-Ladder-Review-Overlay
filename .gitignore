@@ -1,0 +1,14 @@
+node_modules/
+
+# Build intermediates. dist/BWLadderReview.exe is committed on purpose.
+build/bundle.cjs
+build/sea-config.json
+build/sea-prep.blob
+native/build/
+*.obj
+*.pdb
+*.ilk
+
+# Written at runtime beside the exe
+match-history.json
+config.json

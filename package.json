@@ -1,0 +1,21 @@
+{
+  "name": "bw-ladder-review-overlay",
+  "version": "1.0.0",
+  "description": "Reviews and grades your StarCraft: Remastered ladder games as you finish them, and serves the report card as an OBS browser overlay.",
+  "type": "module",
+  "main": "src/main.js",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "node src/main.js",
+    "review": "node src/main.js --once",
+    "build:native": "native\\build-stats.bat",
+    "build:exe": "node build/build-exe.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "postject": "^1.0.0-alpha.6"
+  }
+}
