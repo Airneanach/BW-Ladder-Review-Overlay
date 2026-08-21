@@ -102,7 +102,7 @@ async function main() {
     fatal(`Server error: ${err.message}`);
   }
 
-  console.log('BW Ladder Review Overlay');
+  console.log('BW Ladder Review');
   console.log('');
   console.log(`  Overlay URL   http://127.0.0.1:${config.port}/`);
   console.log('                Add it in OBS as a Browser source, 1920 x 1080.');

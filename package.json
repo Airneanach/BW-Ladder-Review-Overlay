@@ -11,6 +11,7 @@
     "review": "node src/main.js --once",
     "serve": "node src/main.js",
     "build:native": "native\\build-stats.bat",
+    "build:native:bwfind": "native\\build-bwfind.bat",
     "dist": "electron-builder --win portable"
   },
   "engines": {
@@ -22,7 +23,7 @@
   },
   "build": {
     "appId": "com.platinumesport.bwladderreview",
-    "productName": "BW Ladder Review Overlay",
+    "productName": "BW Ladder Review",
     "directories": {
       "output": "dist"
     },
@@ -37,6 +38,18 @@
       {
         "from": "native/bwstats.exe",
         "to": "bwstats.exe"
+      },
+      {
+        "from": "native/bwfind.exe",
+        "to": "bwfind.exe"
+      },
+      {
+        "from": "native/groundtruth/unit-costs.csv",
+        "to": "groundtruth/unit-costs.csv"
+      },
+      {
+        "from": "native/groundtruth/upgrade-costs.csv",
+        "to": "groundtruth/upgrade-costs.csv"
       }
     ],
     "win": {
@@ -46,7 +59,7 @@
       "signAndEditExecutable": false
     },
     "portable": {
-      "artifactName": "BWLadderReview.exe"
+      "artifactName": "BW Ladder Review.exe"
     }
   }
 }

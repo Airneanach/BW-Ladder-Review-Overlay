@@ -71,6 +71,20 @@ export const DEFAULT_PERSONAL_ANCHORS = {
   eapm: [[40, 0], [70, 22], [100, 42], [130, 58], [160, 72], [200, 86], [250, 100]],
 };
 
+// Worker and base targets scale with game length: 28 workers is a strong economy at 6
+// minutes and a badly neglected one at 20. Both curves flatten out, because both things
+// stop in a real game - nobody is still expanding for the first time at 25 minutes, and
+// worker counts plateau once the bases are saturated. Exported (not just inlined in
+// extractMetrics) so the "median game" display can show the same expected-count formula
+// for a reference game length before anyone has trained on their own replays.
+export function workerTargetForMinutes(minutes) {
+  return Math.min(4 + 3 * minutes, 50);
+}
+
+export function baseTargetForMinutes(minutes) {
+  return Math.min(1 + minutes / 4.5, 5);
+}
+
 export const PERSONAL_METRICS = [
   { key: 'workerRatio', label: 'Economy size', higherIsBetter: true },
   { key: 'baseRatio', label: 'Bases taken', higherIsBetter: true },
@@ -78,6 +92,56 @@ export const PERSONAL_METRICS = [
   { key: 'supplyBlockedPct', label: 'Time supply blocked', higherIsBetter: false },
   { key: 'eapm', label: 'Actions per minute', higherIsBetter: true },
 ];
+
+/**
+ * The value on an anchor table that scores `targetScore` - the inverse of
+ * scoreFromAnchors. Anchors are sorted by value ascending; their scores run either
+ * direction (see PERSONAL_METRICS' higherIsBetter), but are monotonic within one table,
+ * so a single scan finds the bracketing pair regardless of which way they run.
+ *
+ * Used to answer "what value counts as a median game" for a table - trained
+ * calibrations already know this directly (calibration.js took the actual 50th
+ * percentile of the player's own games), but the shipped defaults are only a handful
+ * of (value, score) points, so the median value has to be interpolated the same way a
+ * grade is.
+ */
+export function valueAtScore(anchors, targetScore) {
+  for (let i = 1; i < anchors.length; i++) {
+    const [x1, y1] = anchors[i - 1];
+    const [x2, y2] = anchors[i];
+    const between = (targetScore >= y1 && targetScore <= y2) || (targetScore <= y1 && targetScore >= y2);
+    if (between) return y1 === y2 ? x1 : x1 + ((targetScore - y1) / (y2 - y1)) * (x2 - x1);
+  }
+  const first = anchors[0], last = anchors[anchors.length - 1];
+  return targetScore > Math.max(first[1], last[1]) ? (first[1] > last[1] ? first[0] : last[0])
+    : (first[1] < last[1] ? first[0] : last[0]);
+}
+
+/** What the shipped anchor tables call "a median game" (the 'C' boundary, score 50) for
+ *  each personally-calibratable metric - the reference point shown before anyone has
+ *  trained on their own replays. */
+export const DEFAULT_MEDIANS = Object.fromEntries(
+  PERSONAL_METRICS.map(({ key }) => [key, valueAtScore(DEFAULT_PERSONAL_ANCHORS[key], 50)])
+);
+
+// A representative mid-length ladder game, used only to turn the shipped defaults'
+// ratio-based medians (workerRatio, baseRatio, supplyBlockedPct) into plain counts and
+// a plain duration for the pre-training display - "roughly what a game around this long
+// looks like." Once someone trains, calibration.js replaces this with the real median
+// duration and counts from their own games, so this number is never used for grading,
+// only for that one display before real data exists.
+const DEFAULT_REFERENCE_MINUTES = 12;
+
+export const DEFAULT_ABSOLUTE = (() => {
+  const workerTarget = workerTargetForMinutes(DEFAULT_REFERENCE_MINUTES);
+  const baseTarget = baseTargetForMinutes(DEFAULT_REFERENCE_MINUTES);
+  return {
+    referenceMinutes: DEFAULT_REFERENCE_MINUTES,
+    workers: { actual: DEFAULT_MEDIANS.workerRatio * workerTarget, expected: workerTarget },
+    bases: { actual: DEFAULT_MEDIANS.baseRatio * baseTarget, expected: baseTarget },
+    supplyBlockedSeconds: (DEFAULT_MEDIANS.supplyBlockedPct / 100) * DEFAULT_REFERENCE_MINUTES * 60,
+  };
+})();
 
 // The headline grade is stretched about a centre point rather than reported raw - see the
 // note where it is applied. Calibration can move the centre, because "the middle of this
@@ -130,6 +194,10 @@ function summarizePlayer(samples, sampleSeconds) {
     // Share of the (non-maxed) game spent unable to build anything, which is the number
     // players actually feel, rather than the raw seconds.
     supplyBlockedPct: notMaxed.length ? (blockedSamples.length / notMaxed.length) * 100 : null,
+    // The same measurement in actual seconds - grading stays on the percentage (which is
+    // what's comparable across games of different lengths), but a raw seconds figure is
+    // what reads as a real answer to "how long was I supply blocked" rather than a rate.
+    supplyBlockedSeconds: blockedSamples.length * sampleSeconds,
     meanHeadroom: mean(notMaxed.map(s => s.supplyAvailable - s.supplyUsed)),
     meanBank: mean(usable.map(s => s.minerals + s.gas)),
     meanArmyScore: mean(usable.map(s => s.unitScore ?? 0)),
@@ -200,12 +268,8 @@ export function extractMetrics({ samples, players, selfSlot, sampleIntervalFrame
   const myIncomePerMin = me.totalGathered / Math.max(me.playedSeconds / 60, 0.5);
   const theirIncomePerMin = them.totalGathered / Math.max(them.playedSeconds / 60, 0.5);
 
-  // Worker and base targets scale with game length: 28 workers is a strong economy at 6
-  // minutes and a badly neglected one at 20. Both curves flatten out, because both things
-  // stop in a real game - nobody is still expanding for the first time at 25 minutes, and
-  // worker counts plateau once the bases are saturated.
-  const workerTarget = Math.min(4 + 3 * minutes, 50);
-  const baseTarget = Math.min(1 + minutes / 4.5, 5);
+  const workerTarget = workerTargetForMinutes(minutes);
+  const baseTarget = baseTargetForMinutes(minutes);
 
   return {
     durationSeconds,
@@ -338,10 +402,10 @@ export function gradeFromMetrics(m, calibration) {
     },
     {
       id: 'apm',
-      label: 'Actions per minute',
+      label: 'Effective APM',
       weight: 0.8,
       score: m.eapm == null ? null : scoreFromAnchors(m.eapm, anchors('eapm')),
-      detail: m.eapm == null ? null : `${Math.round(m.eapm)} effective APM`,
+      detail: m.eapm == null ? null : `${Math.round(m.eapm)} eAPM`,
     },
   ];
 

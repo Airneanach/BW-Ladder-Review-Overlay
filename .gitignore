@@ -1,6 +1,6 @@
 node_modules/
 
-# electron-builder output. dist/BWLadderReview.exe is committed on purpose; everything else
+# electron-builder output. dist/BW Ladder Review.exe is committed on purpose; everything else
 # in there is intermediate.
 dist/win-unpacked/
 dist/builder-debug.yml

@@ -24,16 +24,20 @@ export class ReviewServer {
    * @param {string} opts.bwstatsPath  path to the simulator exe
    * @param {string|null} opts.historyPath  where to persist reviewed games, or null for memory only
    * @param {(type: string, payload?: object) => void} [opts.onEvent]  progress for a UI
+   * @param {import('./predictions.js').Predictions} [opts.predictions]  resolves a live
+   *   Twitch Prediction against a finished replay, if one is open. Undefined for the CLI
+   *   entry (src/main.js) - live scanning/predictions is GUI-only.
    */
-  constructor({ overlayHtml, bwstatsPath, historyPath = null, onEvent = () => {} }) {
+  constructor({ overlayHtml, bwstatsPath, historyPath = null, onEvent = () => {}, predictions = null }) {
     this.overlayHtml = overlayHtml;
     this.bwstatsPath = bwstatsPath;
     this.onEvent = onEvent;
+    this.predictions = predictions;
     this.store = new MatchStore({ persistPath: historyPath });
 
     // `calibration` is null until the user trains on their own replays; the grader falls back
     // to its shipped anchor tables when it is.
-    this.config = { installPath: null, lastReplayPath: null, playerNames: [], sampleIntervalFrames: 24, calibration: null };
+    this.config = { installPath: null, lastReplayPath: null, replayFolder: null, playerNames: [], sampleIntervalFrames: 24, calibration: null };
     this.reviewing = false;
     this.lastError = null;
     this.port = null;
@@ -92,7 +96,20 @@ export class ReviewServer {
         selfPlayerNames: this.config.playerNames,
         calibration: this.config.calibration,
       });
-      const row = this.store.add(stats, { replayPath, playerNames: this.config.playerNames });
+
+      // If a live match-start already opened a pending row (and possibly a Twitch
+      // Prediction) for this game, complete that row instead of inserting a fresh one.
+      // Twitch failures here are caught and reported inside resolveForFinishedMatch
+      // itself - they must never turn a good replay review into a review:error.
+      let row = null;
+      if (this.predictions) {
+        try {
+          row = await this.predictions.resolveForFinishedMatch(stats, { replayPath, playerNames: this.config.playerNames });
+        } catch (err) {
+          this.onEvent('predictions:error', { message: err.message });
+        }
+      }
+      if (!row) row = this.store.add(stats, { replayPath, playerNames: this.config.playerNames });
       this.lastError = null;
       const elapsedSeconds = (Date.now() - started) / 1000;
       this.onEvent('review:done', { row, elapsedSeconds });
@@ -115,6 +132,20 @@ export class ReviewServer {
     }
     if (!this.config.lastReplayPath) out.push('Replay file not set.');
     else if (!fs.existsSync(this.config.lastReplayPath)) out.push(`Waiting for ${this.config.lastReplayPath} to appear.`);
+    // The two are set independently (separate fields, separate "Browse..." buttons - the
+    // folder only feeds the "train on my replays" scan, the file is what's actually
+    // watched), so nothing stops them drifting apart. That's silent and easy to miss: the
+    // watcher keeps "working" against a file that never gets written to again, and the
+    // overlay just goes quiet with no error anywhere. Surfacing the mismatch here is the
+    // cheapest way to catch it before a whole session's games go unrecorded.
+    if (this.config.lastReplayPath && this.config.replayFolder
+      && path.dirname(this.config.lastReplayPath) !== this.config.replayFolder) {
+      out.push(
+        `Replay file and replays folder point at different places (${this.config.lastReplayPath} vs `
+        + `${this.config.replayFolder}) - games are watched at the file, not the folder, so if that `
+        + `file has stopped updating, fix "Replay file" to match.`
+      );
+    }
     if (this.config.playerNames.length === 0) {
       out.push('No in-game name set - games will be recorded without a win/loss or a grade.');
     }

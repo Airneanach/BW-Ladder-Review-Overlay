@@ -3,15 +3,41 @@
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'" />
-    <title>BW Ladder Review Overlay</title>
+    <title>BW Ladder Review</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="app">
+    <div class="layout">
+      <nav class="sidenav" aria-label="Sections">
+        <img
+          class="sidenav-mark logo-link"
+          id="sidenav-logo"
+          src="assets/platinum-mark.webp"
+          alt="Platinum Esports"
+          title="Open platinumesport.com"
+          role="button"
+          tabindex="0"
+        />
+        <a class="sidenav-link" href="#section-obs" data-section="section-obs">OBS</a>
+        <a class="sidenav-link" href="#section-details" data-section="section-details">Your details</a>
+        <a class="sidenav-link" href="#section-twitch" data-section="section-twitch">Twitch Predictions</a>
+        <a class="sidenav-link" href="#section-training" data-section="section-training">Training</a>
+        <a class="sidenav-link" href="#section-reviewed" data-section="section-reviewed">Games reviewed</a>
+        <a class="sidenav-link" href="#section-activity" data-section="section-activity">Activity</a>
+      </nav>
+      <div class="app">
       <header class="masthead">
-        <div class="masthead-mark" aria-hidden="true"></div>
+        <img
+          class="masthead-mark logo-link"
+          id="masthead-logo"
+          src="assets/platinum-mark.webp"
+          alt="Platinum Esports"
+          title="Open platinumesport.com"
+          role="button"
+          tabindex="0"
+        />
         <div class="masthead-text">
-          <h1>BW Ladder Review Overlay</h1>
+          <h1>BW Ladder Review</h1>
           <p class="masthead-sub">Grades your ladder games as you finish them.</p>
         </div>
         <div class="status-pill" id="status-pill">
@@ -20,8 +46,39 @@
         </div>
       </header>
 
-      <!-- The OBS source ------------------------------------------------------ -->
+      <!-- How it works ---------------------------------------------------------- -->
       <section class="card">
+        <h2 class="card-title">How this works</h2>
+        <p class="card-note">
+          This app will read your replays as you ladder (or just game in general) and
+          tell you how you played.
+        </p>
+        <ol class="howto-list">
+          <li>
+            You should start by putting in your ladder IDs below (you'll need to enter
+            all the ones you play on so it knows who you are).
+          </li>
+          <li>
+            Then go down to the training section and tell it to check your replays. This
+            will review your replays so it knows what your averages are. Please note that 
+            this can take a while, and might slow down your PC depening on it's specs. I 
+            recommend running this off stream, ideally while you get up or work on something 
+            else. 
+          </li>
+          <li>
+            Then take the overlay link and put it in OBS — and usually 5-10s after your
+            game (depending on length) it'll pop up with your grade!
+          </li>
+        </ol>
+        <p class="card-note">
+          I also added a feature that I use personally that automates Twitch
+          predictions. You can use this if you like, but isn't needed if you don't want
+          it.
+        </p>
+      </section>
+
+      <!-- The OBS source ------------------------------------------------------ -->
+      <section class="card" id="section-obs">
         <h2 class="card-title">Put it in OBS</h2>
         <p class="card-note">
           Add a <strong>Browser</strong> source in OBS, paste this URL, and set the size to
@@ -39,7 +96,7 @@
       </section>
 
       <!-- Settings ------------------------------------------------------------ -->
-      <section class="card">
+      <section class="card" id="section-details">
         <h2 class="card-title">Your details</h2>
 
         <div class="field">
@@ -126,8 +183,87 @@
         </details>
       </section>
 
+      <!-- Twitch Predictions ---------------------------------------------------- -->
+      <section class="card" id="section-twitch">
+        <h2 class="card-title">Twitch Predictions</h2>
+        <p class="card-note">
+          Opens a Twitch Prediction the moment your ladder match starts, locks it the
+          instant the game ends, and resolves it once the replay is graded.
+        </p>
+
+        <div class="field toggle-field">
+          <label class="toggle-label">
+            <input type="checkbox" id="live-scanner-enabled" />
+            <span>
+              <span class="field-label">Enable live match tracking</span>
+              <span class="field-hint">
+                Reads StarCraft's memory while it is running, just enough to know when a
+                ladder match starts and ends - required for predictions to open
+                automatically. Uses the name(s) added above.
+              </span>
+            </span>
+          </label>
+          <p class="validity" id="scanner-status" hidden></p>
+        </div>
+
+        <div class="field toggle-field">
+          <label class="toggle-label">
+            <input type="checkbox" id="auto-predictions-enabled" />
+            <span>
+              <span class="field-label">Auto-open Twitch Predictions</span>
+              <span class="field-hint">Only does anything once Twitch is linked below and live match tracking is on.</span>
+            </span>
+          </label>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Twitch account</span>
+          <div class="path-row">
+            <p class="validity" id="twitch-status">Checking…</p>
+            <button type="button" id="twitch-link-btn" class="button">Link Twitch</button>
+            <button type="button" id="twitch-cancel-btn" class="button button-quiet" hidden>Cancel</button>
+          </div>
+          <p class="field-hint" id="twitch-code-hint" hidden></p>
+        </div>
+
+        <p class="validity" id="predictions-readiness"></p>
+
+        <div class="field">
+          <span class="field-label">Win label</span>
+          <input type="text" id="prediction-win-label" spellcheck="false" autocomplete="off" />
+        </div>
+
+        <div class="field">
+          <span class="field-label">Lose label</span>
+          <input type="text" id="prediction-lose-label" spellcheck="false" autocomplete="off" />
+        </div>
+
+        <details class="advanced">
+          <summary>Advanced</summary>
+          <div class="field">
+            <span class="field-label">Prediction title</span>
+            <p class="field-hint">Use <code>{opponent}</code> to include their name.</p>
+            <input type="text" id="prediction-title" spellcheck="false" autocomplete="off" />
+          </div>
+          <div class="field">
+            <span class="field-label">Prediction window (seconds)</span>
+            <p class="field-hint">How long viewers have to bet - Twitch allows 30 to 1800.</p>
+            <input type="number" id="prediction-window" min="30" max="1800" class="port-input" />
+          </div>
+        </details>
+
+        <div class="field">
+          <button type="button" id="send-test-prediction" class="button button-quiet">Send test prediction</button>
+          <p class="field-hint">
+            Creates a real prediction on your channel and cancels it immediately - the
+            quickest way to confirm everything actually works without waiting for a
+            ladder game.
+          </p>
+        </div>
+      </section>
+
       <!-- Training ------------------------------------------------------------ -->
-      <section class="card">
+      <section class="card" id="section-training">
         <div class="card-header">
           <h2 class="card-title">Grade against your own play</h2>
           <span class="trained-badge" id="trained-badge" hidden></span>
@@ -151,29 +287,59 @@
           <p class="progress-text" id="progress-text"></p>
         </div>
 
-        <ul class="trained-metrics" id="trained-metrics"></ul>
+        <div class="field">
+          <span class="field-label">What a median game looks like</span>
+          <p class="field-hint" id="medians-hint">
+            The shipped defaults - what you're graded against until you train on your own
+            replays.
+          </p>
+          <ul class="trained-metrics" id="trained-metrics"></ul>
+        </div>
       </section>
 
-      <!-- Activity ------------------------------------------------------------ -->
-      <section class="card">
+      <!-- Games reviewed -------------------------------------------------------- -->
+      <section class="card" id="section-reviewed">
         <div class="card-header">
           <h2 class="card-title">Games reviewed</h2>
           <button type="button" id="review-once" class="button button-quiet">Review a past replay…</button>
         </div>
+        <p class="card-note">Click a game for its full grade breakdown.</p>
         <ul class="review-list" id="review-list">
           <li class="empty" id="review-empty">Nothing yet — play a game, or review a past replay.</li>
         </ul>
       </section>
 
-      <section class="card">
+      <!-- Activity --------------------------------------------------------------- -->
+      <section class="card" id="section-activity">
         <h2 class="card-title">Activity</h2>
         <ul class="log" id="log"></ul>
       </section>
 
       <p class="footer-note">
-        Leave this window open while you play. Closing it stops the overlay. Nothing is sent
-        anywhere — the overlay is served only to this PC.
+        Leave this window open while you play. Closing it stops the overlay. The overlay
+        itself is served only to this PC; nothing leaves it unless Twitch Predictions
+        above is linked and turned on.
       </p>
+      </div>
+    </div>
+
+    <!-- Grade detail popup ------------------------------------------------------ -->
+    <div class="modal-backdrop" id="grade-modal-backdrop" hidden>
+      <div class="modal grade-modal" role="dialog" aria-modal="true" aria-labelledby="grade-modal-title">
+        <button type="button" class="modal-close" id="grade-modal-close" aria-label="Close">&times;</button>
+        <div class="grade-modal-head">
+          <div class="grade-modal-letter" id="grade-modal-letter"></div>
+          <div>
+            <h2 class="grade-modal-title" id="grade-modal-title"></h2>
+            <p class="grade-modal-sub" id="grade-modal-sub"></p>
+          </div>
+        </div>
+        <p class="grade-modal-keymoment" id="grade-modal-keymoment" hidden></p>
+        <ul class="grade-modal-categories" id="grade-modal-categories"></ul>
+        <p class="grade-modal-empty" id="grade-modal-empty" hidden>
+          This game was not graded — it was likely too short, or not a 1v1.
+        </p>
+      </div>
     </div>
 
     <script src="app.js"></script>

@@ -290,9 +290,13 @@
       // overlay, so it is the default here (the bot-served copy of this page defaults to
       // 'simple' instead). '?style=simple' gets the plain result banner + three stats.
       const style = search.get('style') === 'simple' ? 'simple' : 'advanced';
-      // How many categories the report card lists on each side. Two matches the design;
-      // more fits, up to a point, for anyone who wants a denser card.
-      const listCount = Math.min(Math.max(Number(search.get('listCount') || 2), 1), 4);
+      // How many categories the report card lists on each side. Unset (the default) shows
+      // the full breakdown - every category the grader produced, split evenly between the
+      // positives and negatives lists - so the overlay carries the same complete picture
+      // the app's own grade popup shows, for anyone running the overlay without the app
+      // window open. '?listCount=N' still works for a deliberately shorter, glanceable card.
+      const listCountParam = search.get('listCount');
+      const listCount = listCountParam ? Math.min(Math.max(Number(listCountParam), 1), 8) : null;
 
       const root = document.getElementById('root');
       const resultWordEl = document.getElementById('result-word');
@@ -379,11 +383,13 @@
         gradeCaptionEl.textContent = `${grades.overallScore}/100`;
 
         // categories arrive sorted best-first, so the two ends of the same list are the
-        // positives and the negatives. With few enough categories to overlap, the
-        // negatives give way rather than repeating a row on both sides.
+        // positives and the negatives. No listCount override means "full": split evenly
+        // so every category shows exactly once, rather than a fixed count that could
+        // either repeat a middling category on both sides or leave some out entirely.
         const categories = grades.categories;
-        const positives = categories.slice(0, listCount);
-        const negatives = categories.slice(Math.max(listCount, categories.length - listCount)).reverse();
+        const count = listCount || Math.ceil(categories.length / 2);
+        const positives = categories.slice(0, count);
+        const negatives = categories.slice(Math.max(count, categories.length - count)).reverse();
         renderGradeRows(positivesEl, positives);
         renderGradeRows(negativesEl, negatives);
 

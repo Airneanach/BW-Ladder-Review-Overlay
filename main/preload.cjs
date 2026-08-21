@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('review', {
 
   copyOverlayUrl: () => ipcRenderer.invoke('overlay:copyUrl'),
   openOverlay: () => ipcRenderer.invoke('overlay:open'),
+  openExternal: (key) => ipcRenderer.invoke('external:open', key),
 
   onStatus: (handler) => {
     const listener = (_event, payload) => handler(payload);
@@ -47,5 +48,29 @@ contextBridge.exposeInMainWorld('review', {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on('reviewed', listener);
     return () => ipcRenderer.removeListener('reviewed', listener);
+  },
+});
+
+contextBridge.exposeInMainWorld('twitch', {
+  link: () => ipcRenderer.invoke('twitch:link'),
+  cancelLink: () => ipcRenderer.invoke('twitch:cancelLink'),
+  unlink: () => ipcRenderer.invoke('twitch:unlink'),
+  sendTestPrediction: () => ipcRenderer.invoke('twitch:sendTestPrediction'),
+  getStatus: () => ipcRenderer.invoke('twitch:status'),
+
+  onStatus: (handler) => {
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on('twitchStatus', listener);
+    return () => ipcRenderer.removeListener('twitchStatus', listener);
+  },
+  onLinkCode: (handler) => {
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on('twitchLinkCode', listener);
+    return () => ipcRenderer.removeListener('twitchLinkCode', listener);
+  },
+  onLinkResult: (handler) => {
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on('twitchLinkResult', listener);
+    return () => ipcRenderer.removeListener('twitchLinkResult', listener);
   },
 });

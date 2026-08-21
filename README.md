@@ -1,4 +1,4 @@
-# BW Ladder Review Overlay
+# BW Ladder Review
 
 Reviews your **StarCraft: Remastered** ladder games as you finish them and puts a graded
 report card on stream.
@@ -15,7 +15,7 @@ play.
 
 ## Using it
 
-1. Start **BW Ladder Review Overlay**.
+1. Start **BW Ladder Review**.
 2. Add your in-game name(s) — one per account you play on. This is the only thing you have
    to fill in; the StarCraft folder and replay file are detected for you, with a green tick
    when they check out.
@@ -226,10 +226,10 @@ leave state the packaged build then picks up.
 will make the packaged exe report `Port 3712 is already in use` instead of serving. It says
 so in its Activity log rather than failing silently.
 
-**The packaged app's process name is the productName**, `BW Ladder Review Overlay` — *not*
-`BWLadderReview`. `Get-Process BWLadderReview` matches nothing, so it is easy to leave an old
-build running, holding the port, answering `/health` with stale data and making a fresh build
-look broken. To be sure nothing is left over:
+**The packaged app's process name is the productName**, `BW Ladder Review` — *not*
+`BWLadderReview` or the artifact filename. `Get-Process BWLadderReview` matches nothing, so it
+is easy to leave an old build running, holding the port, answering `/health` with stale data
+and making a fresh build look broken. To be sure nothing is left over:
 
 ```powershell
 Get-Process | Where-Object { $_.ProcessName -match 'BW Ladder Review|electron' } | Stop-Process -Force

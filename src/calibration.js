@@ -186,6 +186,22 @@ export function buildCalibration(games) {
     ? percentile(weightedMeans, 50)
     : DEFAULT_OVERALL_CENTER;
 
+  // Plain counts and a plain duration, alongside the ratio-based `metrics` above that
+  // grading actually uses. workerRatio/baseRatio/supplyBlockedPct are duration-
+  // normalized so a 6-minute and a 20-minute game can be graded fairly against each
+  // other - useful for scoring, but "0.83" isn't an answer to "how many workers do I
+  // usually have," so this is the same games' actual worker/base counts and actual
+  // seconds blocked, median'd the same way.
+  const median = (values) => {
+    const finite = values.filter(Number.isFinite);
+    return finite.length ? percentile(finite, 50) : null;
+  };
+  const absolute = {
+    workers: { actual: median(usable.map(g => g.me.maxWorkers)), expected: median(usable.map(g => g.workerTarget)) },
+    bases: { actual: median(usable.map(g => g.me.maxBases)), expected: median(usable.map(g => g.baseTarget)) },
+    supplyBlockedSeconds: median(usable.map(g => g.me.supplyBlockedSeconds)),
+  };
+
   return {
     calibration: {
       version: 1,
@@ -193,6 +209,7 @@ export function buildCalibration(games) {
       games: usable.length,
       overallCenter: center,
       metrics,
+      absolute,
     },
     report: {
       games: usable.length,

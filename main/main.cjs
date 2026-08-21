@@ -24,6 +24,11 @@ const importEsm = (relative) => import(pathToFileURL(path.join(appRoot, relative
 let mainWindow = null;
 let server = null;
 let detect = null;
+let gradeMatchModule = null;
+let twitchLink = null;
+let predictions = null;
+let liveScanner = null;
+let twitchHealthTimer = null;
 /** Buffered so the renderer, which loads after the server starts, does not miss early lines. */
 const activityLog = [];
 
@@ -53,6 +58,10 @@ process.on('unhandledRejection', (error) => recordFatal('unhandledRejection', er
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
 const historyPath = () => path.join(app.getPath('userData'), 'match-history.json');
 const calibrationPath = () => path.join(app.getPath('userData'), 'calibration.json');
+// Kept separate from settings.json on purpose: a hand-edit or reset of settings can't
+// accidentally leak or discard a live Twitch token, and the file's presence alone
+// answers "is this linked" without needing to parse anything else.
+const twitchLinkPath = () => path.join(app.getPath('userData'), 'twitch-link.json');
 
 function defaultSettings() {
   const lastReplayPath = (detect && detect.detectLastReplayPath()) || '';
@@ -64,6 +73,15 @@ function defaultSettings() {
     // Replays folder, whose AutoSave subfolder is where a ladder history actually accumulates.
     replayFolder: lastReplayPath ? path.dirname(lastReplayPath) : '',
     port: (detect && detect.DEFAULT_PORT) || 3712,
+    // Twitch Predictions - both default off. Reading StarCraft's memory is new,
+    // materially more invasive capability than "watches a replay file", so it's its
+    // own explicit opt-in separate from actually using it to open predictions.
+    liveScannerEnabled: false,
+    twitchAutoPredictionsEnabled: false,
+    predictionWinLabel: 'Win',
+    predictionLoseLabel: 'Lose',
+    predictionTitleTemplate: 'Will I beat {opponent}?',
+    predictionWindowSeconds: 300,
   };
 }
 
@@ -132,9 +150,77 @@ function bwstatsPath() {
   return path.join(appRoot, 'native', 'bwstats.exe');
 }
 
+function bwfindPath() {
+  if (app.isPackaged) return path.join(process.resourcesPath, 'bwfind.exe');
+  return path.join(appRoot, 'native', 'bwfind.exe');
+}
+
+function groundtruthCsvPaths() {
+  const base = app.isPackaged ? path.join(process.resourcesPath, 'groundtruth') : path.join(appRoot, 'native', 'groundtruth');
+  return { unitCostsPath: path.join(base, 'unit-costs.csv'), upgradeCostsPath: path.join(base, 'upgrade-costs.csv') };
+}
+
 function overlayHtml() {
   // Inside the asar when packaged, which Electron's patched fs reads transparently.
   return fs.readFileSync(path.join(appRoot, 'web', 'bw-ladder-review-overlay.html'));
+}
+
+// ---------------------------------------------------------------------------
+// Twitch Predictions: link, prediction state machine, and the live scanner that
+// drives match-start/game-over. All three are created once at startup and then
+// live for the app's lifetime - only the ReviewServer/MatchStore underneath
+// predictions gets rebuilt on a port change (see startServer()), which is why
+// predictions.js is handed a getter for the store rather than a fixed reference.
+// ---------------------------------------------------------------------------
+
+function pushTwitchStatus() {
+  if (!mainWindow || !twitchLink) return;
+  mainWindow.webContents.send('twitchStatus', {
+    link: twitchLink.getHealth(),
+    linked: twitchLink.isLinked(),
+    login: twitchLink.loginName(),
+    scanner: liveScanner ? liveScanner.getStatus() : null,
+  });
+}
+
+async function initTwitch() {
+  const { TwitchLink } = await importEsm('src/twitchLink.js');
+  const { Predictions } = await importEsm('src/predictions.js');
+  const { LiveScanner } = await importEsm('src/liveScanner.js');
+
+  twitchLink = new TwitchLink({
+    persistPath: twitchLinkPath(),
+    onHealthChange: pushTwitchStatus,
+  });
+
+  predictions = new Predictions({
+    twitchLink,
+    getStore: () => server && server.store,
+    getSettings: loadSettings,
+  });
+
+  const { unitCostsPath, upgradeCostsPath } = groundtruthCsvPaths();
+  liveScanner = new LiveScanner({
+    bwfindPath: bwfindPath(),
+    unitCostsPath,
+    upgradeCostsPath,
+    predictions,
+    getSettings: loadSettings,
+    log: (message, level) => log(message, level || 'info'),
+    onStatusChange: pushTwitchStatus,
+  });
+
+  // Boot-time check rather than trusting whatever was true last session - a token
+  // revoked, or a laptop that sat closed past its 30-day refresh window, must be
+  // discovered now, not on the first failed prediction mid-game.
+  await twitchLink.validateLink();
+
+  if (twitchHealthTimer) clearInterval(twitchHealthTimer);
+  twitchHealthTimer = setInterval(() => { twitchLink.validateLink(); }, 5 * 60 * 1000);
+  twitchHealthTimer.unref?.();
+
+  const settings = loadSettings();
+  if (settings.liveScannerEnabled) liveScanner.start();
 }
 
 // ---------------------------------------------------------------------------
@@ -191,10 +277,12 @@ async function startServer(settings) {
     overlayHtml: overlayHtml(),
     bwstatsPath: bwstatsPath(),
     historyPath: historyPath(),
+    predictions,
     onEvent: (type, payload) => {
       if (type === 'review:start') log(`New replay: ${path.basename(payload.replayPath)} - reviewing...`);
       if (type === 'review:skipped') log('Already reviewing a replay, skipped this trigger.', 'warn');
       if (type === 'review:error') log(`Review failed: ${payload.message}`, 'bad');
+      if (type === 'predictions:error') log(`Twitch prediction step failed (the replay review still completed): ${payload.message}`, 'warn');
       if (type === 'review:done') {
         const described = describeReview(payload);
         log(described.message, described.level);
@@ -208,6 +296,7 @@ async function startServer(settings) {
   server.setConfig({
     installPath: settings.installPath || null,
     lastReplayPath: settings.lastReplayPath || null,
+    replayFolder: settings.replayFolder || null,
     playerNames: settings.playerNames,
     calibration,
   });
@@ -243,7 +332,7 @@ function createWindow() {
     minWidth: 720,
     minHeight: 600,
     backgroundColor: '#faf9f7',
-    title: 'BW Ladder Review Overlay',
+    title: 'BW Ladder Review',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -256,7 +345,9 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   detect = await importEsm('src/detect.js');
+  gradeMatchModule = await importEsm('src/gradeMatch.js');
   createWindow();
+  await initTwitch();
   await startServer(loadSettings());
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -267,6 +358,8 @@ app.on('window-all-closed', () => {
   // Closing the window stops the overlay, which is what the docs promise and what a caster
   // expects - nothing should keep serving invisibly in the background.
   if (server) void server.close();
+  if (liveScanner) liveScanner.stop();
+  if (twitchHealthTimer) clearInterval(twitchHealthTimer);
   if (process.platform !== 'darwin') app.quit();
 });
 
@@ -280,6 +373,12 @@ ipcMain.handle('settings:load', () => ({
   activity: activityLog,
   recent: server ? server.store.list(10) : [],
   training: trainingState(),
+  twitch: twitchLink ? {
+    link: twitchLink.getHealth(),
+    linked: twitchLink.isLinked(),
+    login: twitchLink.loginName(),
+    scanner: liveScanner ? liveScanner.getStatus() : null,
+  } : null,
 }));
 
 ipcMain.handle('settings:save', async (_event, patch) => {
@@ -290,6 +389,7 @@ ipcMain.handle('settings:save', async (_event, patch) => {
     server.setConfig({
       installPath: merged.installPath || null,
       lastReplayPath: merged.lastReplayPath || null,
+      replayFolder: merged.replayFolder || null,
       playerNames: merged.playerNames,
     });
   }
@@ -303,6 +403,21 @@ ipcMain.handle('settings:save', async (_event, patch) => {
   } else {
     sendStatus();
   }
+
+  // The scanner reads its in-game name list at start() time (matchStartDetector.js),
+  // so a name-list edit needs a restart to take effect, same as toggling it off/on.
+  if (liveScanner) {
+    const namesChanged = JSON.stringify(merged.playerNames) !== JSON.stringify(previous.playerNames);
+    if (merged.liveScannerEnabled && (!liveScanner.running || namesChanged)) {
+      if (liveScanner.running) liveScanner.stop();
+      liveScanner.start();
+      log('Live match tracking enabled - watching for StarCraft.');
+    } else if (!merged.liveScannerEnabled && liveScanner.running) {
+      liveScanner.stop();
+      log('Live match tracking disabled.');
+    }
+  }
+
   return { settings: merged, status: server ? server.status() : null };
 });
 
@@ -355,6 +470,84 @@ ipcMain.handle('overlay:open', () =>
   shell.openExternal(`http://127.0.0.1:${(server && server.port) || loadSettings().port}/`)
 );
 
+// Fixed allowlist rather than taking a URL from the renderer: this handler runs with
+// full main-process privilege, so it must never open whatever string a compromised or
+// buggy renderer happened to pass it.
+const EXTERNAL_LINKS = {
+  platinumesport: 'https://platinumesport.com',
+};
+
+ipcMain.handle('external:open', (_event, key) => {
+  const url = EXTERNAL_LINKS[key];
+  if (!url) return { ok: false };
+  shell.openExternal(url);
+  return { ok: true };
+});
+
+// ---------------------------------------------------------------------------
+// Twitch Predictions.
+//
+// `twitch:link` doesn't block on the whole flow (which can take up to the device
+// code's ~30 minute window) - it kicks the flow off and returns immediately, with the
+// code and the final result delivered over the 'twitchLinkCode' / 'twitchStatus' push
+// events instead, same reasoning as why training uses a push channel for progress.
+// ---------------------------------------------------------------------------
+
+ipcMain.handle('twitch:link', () => {
+  if (!twitchLink) return { ok: false, message: 'Not ready yet.' };
+  twitchLink.startLinkFlow({
+    onCode: ({ userCode, verificationUri }) => {
+      log(`Linking Twitch - approve at ${verificationUri} (code ${userCode}). Opening it in your browser...`);
+      shell.openExternal(verificationUri).catch(() => {});
+      if (mainWindow) mainWindow.webContents.send('twitchLinkCode', { userCode, verificationUri });
+    },
+    onDone: (link) => {
+      log(`Twitch linked as ${link.login}.`, 'good');
+      if (mainWindow) mainWindow.webContents.send('twitchLinkResult', { ok: true });
+      pushTwitchStatus();
+    },
+    onError: (message) => {
+      log(`Twitch link failed: ${message}`, 'bad');
+      if (mainWindow) mainWindow.webContents.send('twitchLinkResult', { ok: false, message });
+      pushTwitchStatus();
+    },
+  });
+  return { ok: true };
+});
+
+ipcMain.handle('twitch:cancelLink', () => {
+  if (twitchLink) twitchLink.cancelLinkFlow();
+  return { ok: true };
+});
+
+ipcMain.handle('twitch:unlink', () => {
+  if (twitchLink) {
+    twitchLink.unlink();
+    log('Twitch unlinked.', 'warn');
+  }
+  return { ok: true };
+});
+
+ipcMain.handle('twitch:status', () => (twitchLink ? {
+  link: twitchLink.getHealth(),
+  linked: twitchLink.isLinked(),
+  login: twitchLink.loginName(),
+  scanner: liveScanner ? liveScanner.getStatus() : null,
+} : null));
+
+/** Real create-then-cancel round trip - a positive, on-demand answer to "does this actually work?". */
+ipcMain.handle('twitch:sendTestPrediction', async () => {
+  if (!predictions) return { ok: false, message: 'Not ready yet.' };
+  try {
+    await predictions.sendTestPrediction();
+    log('Sent a test prediction and cancelled it - Twitch predictions are working.', 'good');
+    return { ok: true };
+  } catch (err) {
+    log(`Test prediction failed: ${err.message}`, 'bad');
+    return { ok: false, message: err.message };
+  }
+});
+
 /**
  * Levels are 'good' / 'wait' / 'bad' rather than a boolean, because a missing LastReplay.rep is
  * the normal state of a correctly configured machine that has not played a game yet. Reporting
@@ -373,6 +566,39 @@ ipcMain.handle('overlay:open', () =>
 
 let training = null; // { cancelled, progress } while a run is in flight
 
+/**
+ * What a "median game" currently looks like - the player's own trained numbers where
+ * training has run, the shipped defaults otherwise. Shown in the training card
+ * regardless of whether training has happened, so someone can see what they're being
+ * graded against before committing to training (and, once trained, what changed).
+ *
+ * Economy/bases/supply-blocked are reported as plain counts and a plain duration, not
+ * the duration-normalized ratios/percentage grading actually uses internally - "0.83"
+ * or "9.8%" isn't an answer to "how many workers do I usually have" or "how long was I
+ * supply blocked." Bank and eAPM are already plain numbers, so those pass through as-is.
+ */
+function currentMedians() {
+  if (!gradeMatchModule) return null;
+  const calibration = loadCalibration();
+  const trained = !!calibration;
+  // calibration.absolute may be missing on a calibration.json trained before this field
+  // existed - fall back to the shipped reference rather than crash on it. Retraining
+  // fills it in; meanBank/eapm below still show real trained numbers either way, since
+  // those came from `metrics`, which every calibration has always had.
+  const absolute = (trained && calibration.absolute) ? calibration.absolute : gradeMatchModule.DEFAULT_ABSOLUTE;
+  const usingTrainedAbsolute = trained && !!calibration.absolute;
+  const medianFor = (key) => (trained ? calibration.metrics?.[key]?.median : gradeMatchModule.DEFAULT_MEDIANS[key]);
+  return {
+    source: trained ? 'trained' : 'default',
+    referenceMinutes: usingTrainedAbsolute ? null : absolute.referenceMinutes,
+    workers: absolute.workers,
+    bases: absolute.bases,
+    supplyBlockedSeconds: absolute.supplyBlockedSeconds,
+    meanBank: medianFor('meanBank'),
+    eapm: medianFor('eapm'),
+  };
+}
+
 function trainingState() {
   const calibration = loadCalibration();
   return {
@@ -385,6 +611,7 @@ function trainingState() {
         metrics: Object.entries(calibration.metrics).map(([key, v]) => ({ key, median: v.median, samples: v.samples })),
       }
       : null,
+    currentMedians: currentMedians(),
   };
 }
 

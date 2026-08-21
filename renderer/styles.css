@@ -1,4 +1,4 @@
-/* BW Ladder Review Overlay - warm, paper-like light theme with a dark counterpart.
+/* BW Ladder Review - warm, paper-like light theme with a dark counterpart.
    Deliberately the same palette as Replay Sorter: the two are tools from the same shelf. */
 
 :root {
@@ -22,6 +22,14 @@
   --radius: 10px;
   --radius-lg: 14px;
   --shadow: 0 1px 2px rgba(31, 30, 28, 0.05), 0 6px 20px rgba(31, 30, 28, 0.05);
+  /* Grade-band colours, keyed off a category letter's first character - matches the
+     overlay page's own palette (web/bw-ladder-review-overlay.html) so a grade reads the
+     same whether you're looking at the app or the stream. */
+  --grade-a: #4c9a52;
+  --grade-b: #7a9a3a;
+  --grade-c: #b58a2a;
+  --grade-d: #b5652a;
+  --grade-f: #a4402f;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -44,6 +52,11 @@
     --bad: #e08a78;
     --bad-wash: #3a2622;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.25);
+    --grade-a: #7ee081;
+    --grade-b: #b8dd63;
+    --grade-c: #d9a94f;
+    --grade-d: #f0964b;
+    --grade-f: #e08a78;
   }
 }
 
@@ -56,6 +69,9 @@ body {
   /* Disabled on the scrolling element itself, which is what scroll anchoring acts on - setting
      it only on .app was not enough. See the note on .app below. */
   overflow-anchor: none;
+  /* The sidenav's section links jump within this scroller (body, not .app - .app has no
+     height/overflow of its own, so the page itself is what scrolls). */
+  scroll-behavior: smooth;
 }
 
 body {
@@ -66,7 +82,70 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* --- Layout ------------------------------------------------------------------
+   A fixed sidebar next to the scrolling content column. The sidebar itself never
+   scrolls; only .app does, which is what section links jump within. */
+
+.layout {
+  display: flex;
+  align-items: flex-start;
+  min-height: 100vh;
+}
+
+.sidenav {
+  position: sticky;
+  top: 0;
+  flex: none;
+  width: 168px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 20px 12px;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+
+.sidenav-mark {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  margin: 0 0 14px 8px;
+}
+
+.sidenav-link {
+  width: 100%;
+  padding: 8px 9px;
+  border-radius: var(--radius);
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 550;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidenav-link:hover {
+  background: var(--surface-quiet);
+  color: var(--ink);
+}
+
+.sidenav-link.is-active {
+  background: var(--accent-wash);
+  color: var(--accent);
+}
+
+.sidenav-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .app {
+  flex: 1 1 auto;
+  min-width: 0;
   max-width: 780px;
   margin: 0 auto;
   padding: 24px 24px 40px;
@@ -75,6 +154,11 @@ body {
      the "anchor" element still, which on load put the window partway down the page - past the
      masthead and the OBS URL, the two things a first-time user needs to see. */
   overflow-anchor: none;
+}
+
+.app section[id] {
+  /* So a jumped-to section isn't flush against the window's top edge. */
+  scroll-margin-top: 16px;
 }
 
 /* --- Masthead ------------------------------------------------------------- */
@@ -87,11 +171,24 @@ body {
 }
 
 .masthead-mark {
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   flex: none;
-  border-radius: 9px;
-  background: linear-gradient(140deg, var(--accent), #7d3f8c);
+  object-fit: contain;
+}
+
+.logo-link {
+  cursor: pointer;
+}
+
+.logo-link:hover {
+  opacity: 0.85;
+}
+
+.logo-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .masthead-text {
@@ -180,6 +277,24 @@ body {
   margin: 0 0 12px;
   color: var(--ink-soft);
   font-size: 13.5px;
+}
+
+/* --- How-to list ------------------------------------------------------------ */
+
+.howto-list {
+  margin: 0 0 12px;
+  padding-left: 22px;
+  color: var(--ink);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.howto-list li {
+  margin-bottom: 6px;
+}
+
+.howto-list li:last-child {
+  margin-bottom: 0;
 }
 
 /* --- Fields --------------------------------------------------------------- */
@@ -362,6 +477,30 @@ input:focus-visible {
 .validity.is-bad { color: var(--bad); }
 .validity.is-bad::before { background: var(--bad); }
 
+/* --- Toggles ---------------------------------------------------------------
+   Plain checkboxes rather than a custom switch: this app has no other toggle-style
+   control, so a native checkbox stays consistent with everything else here and needs
+   no extra accessibility work. */
+
+.toggle-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.toggle-label input[type="checkbox"] {
+  margin-top: 3px;
+  flex: none;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+}
+
+.toggle-field .validity {
+  margin-left: 25px;
+}
+
 /* --- Advanced ------------------------------------------------------------- */
 
 .advanced {
@@ -499,10 +638,10 @@ input:focus-visible {
 
 .trained-metrics {
   list-style: none;
-  margin: 14px 0 0;
+  margin: 8px 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 7px 16px;
 }
 
@@ -514,6 +653,7 @@ input:focus-visible {
   gap: 10px;
   border-bottom: 1px dotted var(--line);
   padding-bottom: 3px;
+  white-space: nowrap;
 }
 
 .trained-metrics .metric-value {
@@ -571,4 +711,163 @@ code {
   background: var(--surface-quiet);
   padding: 1px 4px;
   border-radius: 4px;
+}
+
+/* --- Review row (clickable) ------------------------------------------------ */
+
+.review-row {
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+
+.review-row:hover {
+  background: var(--surface-quiet);
+}
+
+.review-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* --- Grade detail popup -----------------------------------------------------
+   The full breakdown a review row's compact grade letter can only hint at - every
+   category, not just the headline one. Same content the overlay shows automatically
+   on stream, so a player gets the identical picture whether they're looking at the
+   app or just have the overlay running. */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 18, 14, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 10;
+}
+
+/* A class selector and an attribute selector are equal specificity, so without this the
+   rule above (which runs later in the sheet) would win over the UA stylesheet's own
+   `[hidden] { display: none }` and the popup would never actually hide. */
+.modal-backdrop[hidden] {
+  display: none;
+}
+
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  max-width: 480px;
+  width: 100%;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 22px 24px;
+  position: relative;
+}
+
+.modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.modal-close:hover {
+  background: var(--surface-quiet);
+  color: var(--ink);
+}
+
+.grade-modal-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-right: 24px;
+}
+
+.grade-modal-letter {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: var(--surface-quiet);
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.grade-modal-title {
+  margin: 0;
+  font-size: 17px;
+}
+
+.grade-modal-sub {
+  margin: 3px 0 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.grade-modal-keymoment {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--surface-quiet);
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.grade-modal-categories {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+}
+
+.grade-modal-categories li {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.grade-modal-categories li:first-child {
+  border-top: none;
+}
+
+.grade-modal-categories .cat-letter {
+  flex: none;
+  width: 32px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.grade-modal-categories .cat-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.grade-modal-categories .cat-label {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.grade-modal-categories .cat-detail {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.grade-modal-empty {
+  margin: 18px 0 0;
+  color: var(--ink-faint);
+  font-size: 13px;
 }
