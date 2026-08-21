@@ -128,65 +128,6 @@ The app serves these on `127.0.0.1` only — nothing is reachable from the netwo
 `/api/bw/matches` rows carry `result`, `my_race`, `opponent_race`, `map_name`,
 `duration_seconds`, `supply_blocked_seconds`, `avg_unspent_minerals`/`_gas`,
 `key_moment_text`, `grades_json` (the report card, as a JSON string) and `all_players`.
-Point your own graphics at it if you don't want the bundled page.
-
-## Building
-
-Two stages: the native simulator, then the app.
-
-```
-native\build-stats.bat     # -> native\bwstats.exe   (needs MSVC; only when the C++ changes)
-npm install
-npm run dist               # -> dist\BWLadderReview.exe   (portable, single file, ~75 MB)
-```
-
-`build-stats.bat` needs Visual Studio Build Tools with "Desktop development with C++" and
-finds the x64 developer environment itself. `bwstats.exe` is committed, so `npm run dist`
-works without MSVC as long as you haven't changed the C++.
-
-**`npm run dist` needs about 1 GB of free disk space.** It stages a ~270 MB unpacked build
-and then has NSIS compress it, and when it runs out it fails with
-`Error: can't write 67108864 bytes to output` — which looks like a config error but is not,
-and it leaves a broken ~45 KB stub behind that will not run.
-
-**No app icon yet**, so the build logs `default Electron icon is used` and the exe carries
-Electron's. Drop a 256×256 `build/icon.ico` in and electron-builder will pick it up with no
-config change.
-
-To run it without packaging:
-
-```
-npm start                             the app, from source
-npm run review -- "path\to\game.rep"  review one replay on the command line, print JSON
-npm run serve                         watch and serve with no window (console only)
-```
-
-## Layout
-
-```
-main/main.cjs               Electron main: window, settings, drives the review server
-main/preload.cjs            the renderer's only route out (contextIsolation)
-renderer/                   the settings window
-src/reviewServer.js         watch → simulate → grade → serve, with no opinion about the UI
-src/trainer.js              scans the replay folder and reviews a batch, for training
-src/calibration.js          turns those games into grade boundaries for this player
-src/main.js                 console entry point, same engine without a window
-src/config.js               config.json + argv, for the console entry only
-src/detect.js               finds StarCraft and the replay file
-src/watchLastReplay.js      fires once per finished game
-src/matchStore.js           history + the row shape the overlay reads
-src/computeMatchStats.js    runs the pipeline for one replay
-src/replayContainer.js      decodes SC:R's replay container format
-src/commandStream.js        leave-game events, chat, APM from the command stream
-src/gradeMatch.js           the report card - anchor tables live here
-native/src/main.cpp         drives OpenBW frame by frame, prints CSV state
-native/vendor/openbw/       vendored OpenBW (patched - see its NOTICE.md)
-native/vendor/casclib/      vendored CascLib (MIT)
-web/                        the overlay page
-```
-
-The GUI and the console entry both drive `src/reviewServer.js`, so there is one
-implementation of the pipeline rather than two that can drift.
 
 ## How it works
 
@@ -207,33 +148,6 @@ undocumented compatibility gaps, and win/loss has to be reconstructed from four 
 signals because replays have no winner field. Both are written up in
 [`native/vendor/openbw/NOTICE.md`](native/vendor/openbw/NOTICE.md) and the comments in
 `computeMatchStats.js`.
-
-## Notes for anyone hacking on it
-
-**`ELECTRON_RUN_AS_NODE`.** If that variable is set in your shell, `electron.exe` runs as
-plain Node: no window, no `app`, and an immediate silent exit, while
-`electron --version` prints a *Node* version. Some editors (VS Code's extension host among
-them) export it, so a terminal inherited from one will make the app look broken when it is
-fine. `npm start` from a normal terminal is unaffected.
-
-**Settings live in one place for both dev and packaged runs:**
-`%APPDATA%\bw-ladder-review-overlay\`. Electron takes that from the package `name`, and
-electron-builder's `productName` does not change it — so `npm start` and the packaged exe
-share the same settings and match history, which is convenient but does mean a dev run can
-leave state the packaged build then picks up.
-
-**Only one copy can run at a time.** They all want the same port, so a forgotten `npm start`
-will make the packaged exe report `Port 3712 is already in use` instead of serving. It says
-so in its Activity log rather than failing silently.
-
-**The packaged app's process name is the productName**, `BW Ladder Review` — *not*
-`BWLadderReview` or the artifact filename. `Get-Process BWLadderReview` matches nothing, so it
-is easy to leave an old build running, holding the port, answering `/health` with stale data
-and making a fresh build look broken. To be sure nothing is left over:
-
-```powershell
-Get-Process | Where-Object { $_.ProcessName -match 'BW Ladder Review|electron' } | Stop-Process -Force
-```
 
 ## Licences
 
