@@ -1,17 +1,19 @@
 # BW Ladder Review
 
-Reviews your **StarCraft: Remastered** ladder games as you finish them and puts a graded
-report card on stream.
+After your ladder games, this app will review the replay against the training data in the app and give you a grade.
 
 When a game ends, this re-simulates the whole replay through
-[OpenBW](https://github.com/OpenBW/openbw), reads the real game state back out — actual
-harvested totals, worker and base counts, army value, supply-blocked time — grades it, and
-serves the result as a browser overlay for OBS. A typical 15-minute game is reviewed in
-about a second.
+[OpenBW](https://github.com/OpenBW/openbw), pulls things such as time supply blocked, big fights, etc
+and then compares that against the training data to provide you a grade. This is shown in a browser
+overlay you can add to your OBS, or just look at in a broser
 
-It is a desktop app: a window where you check your StarCraft folder, your replay file and
-your in-game name(s), copy the overlay URL into OBS, and then leave it running while you
-play.
+Launch the app, verify where your game and replays sit, and if you want you can link your twitch for
+automated predictions.
+
+Please note that there's currently no cumulative training set up. Once you train it, it's statically set to
+whatever that is. If you improve (or unimprove in my case), it will continue to grade you against whatever
+it was trained at. I recommend retraining weekly, or at least every couple of weeks to keep it as accurate
+as possible.
 
 ## Using it
 
@@ -22,86 +24,37 @@ play.
 3. Copy the overlay URL and add it in OBS as a **Browser** source, **1920 × 1080**.
 4. Play. Each finished game pops its report card up for 15 seconds.
 
-Leave the window open while you play — closing it stops the overlay.
+The app has to remain open while in use to read the replays. This app reads the LastRep file 
+from your replays to get it's information.
 
-The overlay is blank until a game finishes, which is normal. **Review a past replay…** puts
-a card on screen straight away so you can position it in OBS before you play.
+### Why do I have to enter my IDs?
 
-### Why the name is the one thing you have to enter
+I couldn't find a way to easily have it tell who you are when playing, so the easiest answer is
+to have you (and me) put in your ladder ID(s) and it compares that to the in game names of the replays.
+If you have a lot of ladder IDs you'll need to enter them all, but it's a one time process. Once you've
+put in your IDs, the app will save them.
 
-Replays record the in-game account names that played, but nothing on your PC says which of
-them is you — Remastered has no screen-name registry key, and picking the host or slot 0 is
-wrong as often as it's right.
-
-If you leave it empty the app still works and still records the game; it just can't say
-whether *you* won or grade *your* play. It tells you the names it found in the replay so you
-can add the right one:
-
-```
-Reviewed in 1.0s, but none of your in-game names matched this game.
-Players in this replay: L9_XD, nOmZergWeedLord
-```
-
-### Where it keeps things
+### Where are things hidden on your PC
 
 Settings, match history and a crash log live in
-`%APPDATA%\bw-ladder-review-overlay\`. Nothing is written next to the exe, because the
-portable build unpacks itself to a new temporary folder on every run.
+`%APPDATA%\bw-ladder-review-overlay\`.
 
 ## Train it on your own play
 
-**Do this first — otherwise the grades describe someone else.**
+**Do this first — out of the box is trained on my games**
 
-The built-in grade boundaries were tuned by eye against one player's replay history, so out
-of the box they measure you against *that* player. If your APM is 90 you would sit at F for
-ever; if you are much stronger, nothing would ever drop below an A. Either way the grade
-stops telling you anything.
+In order to make sure it worked, the app is by default trained on my 1400 MMR replays. You'll want to 
+make sure you put in your Ladder IDs, and then use the train button to have it go over YOUR replays
+to give an accurate grade. This can be demanding on your PC, and I recommend you do it during a time
+where you're not glued to your PC, or are working on something light. Definitely not while you're live.
 
-Press **Train on my replays**. It reviews your past games — up to 100, newest first, about a
-minute or two — and rebuilds the boundaries from your own numbers, so a normal game for you
-becomes a C and your best become As. Then a grade means "compared with how you normally
-play", which is the thing worth knowing.
-
-It is entirely local. Your replays are simulated on your PC by the same bundled simulator a
-normal review uses; nothing is uploaded, nothing is downloaded, and there is no model beyond
-a small table of numbers in `%APPDATA%\bw-ladder-review-overlay\calibration.json`.
-
-The card shows your median for each measure once trained — worth a glance, since those are
-numbers you can check against your own sense of your play. **Reset to built-in** puts the
-shipped grading back. Retrain every few weeks if you are improving, or your own past becomes
-the thing holding your grades down.
-
-Details worth knowing:
-
-- **Newest first**, so a capped run reflects how you play now rather than three years ago.
-- Games under four minutes, team games and games none of your names played in are skipped;
-  the summary says how many of each.
-- **At least 12 usable games** are needed. Below that the percentiles are noise and it
-  declines to train rather than making grading worse.
-- **Two measures stay absolute** and are deliberately *not* personalised: `Income vs
-  opponent` and `Army vs opponent` are head-to-head, so matching your opponent means the
-  same thing whoever is playing; and `Excess supply` encodes a mechanical optimum, so
-  scoring it against your own habits would tell a chronically supply-blocked player that
-  being supply-blocked is fine.
 
 ## What the grades mean
 
-The **inputs** are objective — real harvested totals, real worker/base counts, real army
-value, real supply-blocked time, and effective APM from the command stream (raw APM minus
-commands repeated unchanged within a second).
-
-The **grading** is a judgement call, and after training it is a judgement call about you.
-The default anchor tables in [`src/gradeMatch.js`](src/gradeMatch.js) put the median game of
-the project's own 149-replay history near a C; training replaces five of them from your own
-distribution (see [`src/calibration.js`](src/calibration.js)). Each is a short list of
-`(value, score)` points, so moving a boundary by hand is still a one-line edit.
-
-Three deliberate exclusions: samples at 200 supply don't count as supply-blocked (a maxed
-player is blocked by definition, and grading that down punishes whoever built the best
-army), the first two minutes don't count toward averages (every opening is identical), and
-games under four minutes aren't graded at all — a 4-pool that wins at 3:30 with four drones
-did have an F-grade economy, and saying so is true and useless. Ungraded games fall back to
-the plain result banner.
+It takes all the stats from the game, your army count, worker count, base count. Time you spent supply
+blocked, where you were in comparison to your opponent, etc and calculates that against your trained 
+averages. Now this can be a bit misleading if you cheese. I tried to set it so games under 4 minutes 
+don't count, but sometimes cheeses are 4:01 and will just be F grades (since you have no eco or bases).
 
 ## Overlay options
 
@@ -114,46 +67,3 @@ Append to the browser-source URL:
 | `pollMs` | `4000` | How often the page checks for a new result |
 | `listCount` | `2` | Graded categories listed per side (1–4) |
 | `title` | — | Replaces the report card's heading |
-
-## Endpoints
-
-The app serves these on `127.0.0.1` only — nothing is reachable from the network.
-
-| Path | Serves |
-| --- | --- |
-| `/` | the overlay page |
-| `/api/bw/matches?limit=N` | reviewed games, newest first |
-| `/health` | config, warnings, and whether a review is in progress |
-
-`/api/bw/matches` rows carry `result`, `my_race`, `opponent_race`, `map_name`,
-`duration_seconds`, `supply_blocked_seconds`, `avg_unspent_minerals`/`_gas`,
-`key_moment_text`, `grades_json` (the report card, as a JSON string) and `all_players`.
-
-## How it works
-
-```
-LastReplay.rep changes
-  -> replayContainer.js decodes the seRS container into header/commands/map
-  -> bwstats.exe re-simulates the game through OpenBW, reading game data from
-     your StarCraft install's CASC storage, printing per-second state as CSV
-  -> computeMatchStats.js parses it, reconstructs the winner, computes economy stats
-  -> gradeMatch.js turns the samples into a report card
-  -> served on 127.0.0.1 for the overlay page to pick up
-```
-
-Replays record only *commands*, never state — which is why knowing how many minerals you
-had banked at 8:00 requires re-running the game rather than reading a field. Getting OpenBW
-(built against classic 1.16.1) to replay a modern Remastered replay took solving several
-undocumented compatibility gaps, and win/loss has to be reconstructed from four independent
-signals because replays have no winner field. Both are written up in
-[`native/vendor/openbw/NOTICE.md`](native/vendor/openbw/NOTICE.md) and the comments in
-`computeMatchStats.js`.
-
-## Licences
-
-`native/vendor/openbw/` is vendored from a repository with **no LICENSE file** (so, all
-rights reserved by default) — see its [NOTICE.md](native/vendor/openbw/NOTICE.md) for scope
-of use. `native/vendor/casclib/` is MIT. Everything else here is original.
-
-StarCraft is Blizzard Entertainment's. This tool ships no Blizzard data — it reads the
-game's own files from your installation at runtime.
